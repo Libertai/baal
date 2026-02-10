@@ -19,6 +19,7 @@ from baal.handlers.commands import (
     manage_command,
     repair_command,
     start_command,
+    update_command,
     verbose_command,
 )
 from baal.services.deployer import AlephDeployer
@@ -243,6 +244,7 @@ def create_application(settings: Settings | None = None) -> Application:
     app.add_handler(CommandHandler("list", list_command))
     app.add_handler(CommandHandler("delete", delete_command))
     app.add_handler(CommandHandler("repair", repair_command))
+    app.add_handler(CommandHandler("update", update_command))
     app.add_handler(CommandHandler("manage", manage_command))
     app.add_handler(CommandHandler("login", login_command))
     app.add_handler(CommandHandler("logout", logout_command))

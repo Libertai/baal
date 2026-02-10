@@ -367,6 +367,81 @@ async def delete_cancelled_callback(update: Update, context: ContextTypes.DEFAUL
     await query.edit_message_text("Deletion cancelled.")
 
 
+# ── /update ────────────────────────────────────────────────────────────
+
+async def update_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Redeploy agent code to a running VM (push latest code without recreating the instance)."""
+    db = _get_db(context)
+    deployer = _get_deployer(context)
+    user_id = update.effective_user.id
+
+    if not context.args:
+        await update.message.reply_text("Usage: /update <agent_id>")
+        return
+
+    try:
+        agent_id = int(context.args[0])
+    except ValueError:
+        await update.message.reply_text("Agent ID must be a number.")
+        return
+
+    agent = await db.get_agent(agent_id)
+    if not agent or agent["owner_id"] != user_id:
+        await update.message.reply_text("Agent not found or you don't own it.")
+        return
+
+    if agent["deployment_status"] != "running":
+        await update.message.reply_text(
+            f"Agent is not running (status: {agent['deployment_status']}). Use /repair instead."
+        )
+        return
+
+    if not agent["instance_hash"] or not agent["crn_url"]:
+        await update.message.reply_text("Missing instance info. Use /repair instead.")
+        return
+
+    await update.message.reply_text(f"Updating agent \"{agent['name']}\"...\nLooking up VM allocation...")
+
+    # Find the VM's SSH details from the CRN
+    alloc = await deployer.wait_for_allocation(agent["instance_hash"], agent["crn_url"], retries=3, delay=5)
+    if not alloc:
+        await update.message.reply_text("Could not reach the VM. It may have been deallocated. Try /repair.")
+        return
+
+    vm_ip = alloc["vm_ipv4"]
+    ssh_port = alloc["ssh_port"]
+    await update.message.reply_text(f"VM found at {vm_ip}:{ssh_port}\nDeploying latest code...")
+
+    # Get agent config for .env
+    settings = context.bot_data["settings"]
+    encryption_key = settings.bot_encryption_key
+    user = await db.get_user(user_id)
+    if user and user["api_key"]:
+        libertai_key = decrypt(user["api_key"], encryption_key)
+    else:
+        libertai_key = settings.libertai_api_key
+
+    agent_secret = decrypt(agent["auth_token"], encryption_key)
+
+    deploy_result = await deployer.deploy_agent(
+        vm_ip=vm_ip,
+        ssh_port=ssh_port,
+        agent_name=agent["name"],
+        system_prompt=agent["system_prompt"],
+        model=agent["model"],
+        libertai_api_key=libertai_key,
+        agent_secret=agent_secret,
+        instance_hash=agent["instance_hash"],
+        owner_chat_id=str(user_id),
+    )
+
+    if deploy_result["status"] != "success":
+        await update.message.reply_text(f"Update failed: {deploy_result.get('error', 'unknown')}")
+        return
+
+    await update.message.reply_text(f"Agent \"{agent['name']}\" updated successfully.")
+
+
 # ── /repair ────────────────────────────────────────────────────────────
 
 async def repair_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
