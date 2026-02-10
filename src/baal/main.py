@@ -69,17 +69,9 @@ async def handle_callback_query(update, context) -> None:
         return cmd_update
 
     # Route to appropriate handler based on callback_data prefix
-    if data.startswith("quick_create"):
-        # Exit chat mode and trigger /create wizard
-        await query.answer()
-        context.user_data.pop("current_agent_id", None)  # Exit chat mode
+    # Note: quick_create is handled by the ConversationHandler entry point
 
-        # Trigger the /create command by calling create_start directly
-        from baal.handlers.commands import create_start
-        cmd_update = make_command_update(update)
-        await create_start(cmd_update, context)
-
-    elif data.startswith("quick_list"):
+    if data.startswith("quick_list"):
         await query.answer()
         cmd_update = make_command_update(update)
         await list_command(cmd_update, context)

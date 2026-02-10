@@ -460,6 +460,9 @@ async def repair_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 async def create_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Entry point for /create wizard."""
+    # Exit chat mode if currently chatting with an agent
+    context.user_data.pop("current_agent_id", None)
+
     db = _get_db(context)
     settings = context.bot_data["settings"]
     user_id = update.effective_user.id
@@ -921,7 +924,10 @@ async def dashboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 def build_create_conversation_handler() -> ConversationHandler:
     """Build the ConversationHandler for the /create wizard."""
     return ConversationHandler(
-        entry_points=[CommandHandler("create", create_start)],
+        entry_points=[
+            CommandHandler("create", create_start),
+            CallbackQueryHandler(create_start, pattern=r"^quick_create$"),
+        ],
         states={
             NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, create_name)],
             PROMPT: [MessageHandler(filters.TEXT & ~filters.COMMAND, create_prompt)],
