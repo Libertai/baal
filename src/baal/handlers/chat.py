@@ -10,7 +10,7 @@ from telegram.ext import ContextTypes
 
 from baal.database.db import Database
 from baal.services.encryption import decrypt
-from baal.services.proxy import stream_messages
+from baal.services.proxy import get_pending_messages, stream_messages
 from baal.services.rate_limiter import RateLimiter
 
 logger = logging.getLogger(__name__)
@@ -116,12 +116,25 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 # Keep typing indicator alive for next iteration
                 await update.message.chat.send_action(ChatAction.TYPING)
 
+            elif event_type == "error":
+                await _split_and_send(
+                    update, f"\u26a0\ufe0f {event.get('content', 'Something went wrong')}"
+                )
+
             elif event_type == "tool_use" and show_tools:
                 await update.message.reply_text(f"\u2699\ufe0f {event['name']}")
                 await update.message.chat.send_action(ChatAction.TYPING)
 
             elif event_type == "done":
                 break
+
+        # Check for pending messages from heartbeat/subagents
+        try:
+            pending = await get_pending_messages(agent["vm_url"], auth_token)
+            for msg in pending:
+                await _split_and_send(update, f"*{agent_name}*: {msg['content']}")
+        except Exception:
+            pass  # Non-critical
 
     except Exception as e:
         logger.error(f"Proxy error for agent {agent_id}: {e}")

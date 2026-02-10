@@ -419,6 +419,7 @@ async def _deploy_agent_background(
             libertai_api_key=libertai_api_key,
             agent_secret=agent_secret,
             instance_hash=instance_hash,
+            owner_chat_id=str(chat_id),
         )
 
         if deploy_result["status"] != "success":

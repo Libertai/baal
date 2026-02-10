@@ -40,3 +40,14 @@ async def health_check(agent_url: str) -> bool:
             return resp.status_code == 200
     except Exception:
         return False
+
+
+async def get_pending_messages(agent_url: str, auth_token: str) -> list[dict]:
+    """Fetch pending proactive messages from an agent."""
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        resp = await client.get(
+            f"{agent_url}/pending",
+            headers={"Authorization": f"Bearer {auth_token}"},
+        )
+        resp.raise_for_status()
+        return resp.json().get("messages", [])

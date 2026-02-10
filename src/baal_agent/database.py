@@ -31,6 +31,13 @@ class AgentDatabase:
             );
             CREATE INDEX IF NOT EXISTS idx_messages_chat
                 ON messages (chat_id, created_at);
+            CREATE TABLE IF NOT EXISTS pending_messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                chat_id TEXT NOT NULL,
+                content TEXT NOT NULL,
+                source TEXT NOT NULL DEFAULT 'system',
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
         """)
 
     async def close(self) -> None:
@@ -79,4 +86,63 @@ class AgentDatabase:
             if r["tool_call_id"]:
                 msg["tool_call_id"] = r["tool_call_id"]
             messages.append(msg)
+        return messages
+
+    async def clear_history(self, chat_id: str) -> int:
+        """Delete all messages for a chat_id. Returns count deleted."""
+        cursor = await self.db.execute(
+            "SELECT COUNT(*) as cnt FROM messages WHERE chat_id = ?", (chat_id,)
+        )
+        row = await cursor.fetchone()
+        count = row["cnt"] if row else 0
+        await self.db.execute("DELETE FROM messages WHERE chat_id = ?", (chat_id,))
+        await self.db.commit()
+        return count
+
+    # ── Pending messages ──────────────────────────────────────────────
+
+    async def add_pending(
+        self, chat_id: str, content: str, source: str = "system"
+    ) -> None:
+        """Insert a pending proactive message."""
+        now = datetime.now(timezone.utc).isoformat()
+        await self.db.execute(
+            "INSERT INTO pending_messages (chat_id, content, source, created_at) "
+            "VALUES (?, ?, ?, ?)",
+            (chat_id, content, source, now),
+        )
+        await self.db.commit()
+
+    async def get_and_clear_pending(
+        self, chat_id: str | None = None
+    ) -> list[dict]:
+        """Fetch pending messages (optionally for a chat_id), delete them, return the list."""
+        if chat_id:
+            cursor = await self.db.execute(
+                "SELECT id, chat_id, content, source, created_at "
+                "FROM pending_messages WHERE chat_id = ? ORDER BY created_at",
+                (chat_id,),
+            )
+        else:
+            cursor = await self.db.execute(
+                "SELECT id, chat_id, content, source, created_at "
+                "FROM pending_messages ORDER BY created_at"
+            )
+        rows = await cursor.fetchall()
+        messages = [
+            {
+                "chat_id": r["chat_id"],
+                "content": r["content"],
+                "source": r["source"],
+                "created_at": r["created_at"],
+            }
+            for r in rows
+        ]
+        if rows:
+            ids = [r["id"] for r in rows]
+            placeholders = ",".join("?" for _ in ids)
+            await self.db.execute(
+                f"DELETE FROM pending_messages WHERE id IN ({placeholders})", ids
+            )
+            await self.db.commit()
         return messages
