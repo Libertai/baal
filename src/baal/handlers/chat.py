@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import html
 import logging
 
 from telegram import Update
-from telegram.constants import ChatAction, ParseMode
+from telegram.constants import ChatAction
+from telegram.error import BadRequest
 from telegram.ext import ContextTypes
 
 from baal.database.db import Database
@@ -19,6 +19,17 @@ logger = logging.getLogger(__name__)
 TELEGRAM_MAX_MESSAGE_LENGTH = 4096
 
 
+async def _send_one(update: Update, text: str, parse_mode: str | None = None) -> None:
+    """Send a single message. If parse_mode fails, retry as plain text."""
+    try:
+        await update.message.reply_text(text, parse_mode=parse_mode)
+    except BadRequest as e:
+        if "parse entities" in str(e).lower() or "can't find end" in str(e).lower():
+            await update.message.reply_text(text)
+        else:
+            raise
+
+
 async def _split_and_send(
     update: Update,
     text: str,
@@ -26,15 +37,11 @@ async def _split_and_send(
 ) -> None:
     """Send a message, splitting into chunks if it exceeds Telegram's limit.
 
-    Args:
-        update: Telegram update to reply to.
-        text: Message text.
-        parse_mode: Optional parse mode. Use None for dynamic/untrusted content
-            (agent responses, error details). Use ParseMode.HTML or "Markdown"
-            only for bot-controlled UI strings.
+    If parse_mode is set and Telegram rejects the formatting, falls back
+    to plain text automatically.
     """
     if len(text) <= TELEGRAM_MAX_MESSAGE_LENGTH:
-        await update.message.reply_text(text, parse_mode=parse_mode)
+        await _send_one(update, text, parse_mode=parse_mode)
         return
 
     chunks: list[str] = []
@@ -51,7 +58,7 @@ async def _split_and_send(
         text = text[split_at:].lstrip()
 
     for chunk in chunks:
-        await update.message.reply_text(chunk, parse_mode=parse_mode)
+        await _send_one(update, chunk, parse_mode=parse_mode)
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -150,15 +157,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             event_type = event.get("type")
 
             if event_type == "text":
-                # Agent content is arbitrary LLM output — send as plain text
-                # to avoid Telegram Markdown/HTML parsing errors.
-                # Use HTML only for the bold agent-name prefix.
-                safe_name = html.escape(agent_name)
-                safe_content = html.escape(event["content"])
                 await _split_and_send(
                     update,
-                    f"<b>{safe_name}</b>: {safe_content}",
-                    parse_mode=ParseMode.HTML,
+                    f"*{agent_name}*: {event['content']}",
+                    parse_mode="Markdown",
                 )
                 # Keep typing indicator alive for next iteration
                 await update.message.chat.send_action(ChatAction.TYPING)
@@ -178,12 +180,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         try:
             pending = await get_pending_messages(agent["vm_url"], auth_token)
             for msg in pending:
-                safe_name = html.escape(agent_name)
-                safe_content = html.escape(msg["content"])
                 await _split_and_send(
                     update,
-                    f"<b>{safe_name}</b>: {safe_content}",
-                    parse_mode=ParseMode.HTML,
+                    f"*{agent_name}*: {msg['content']}",
+                    parse_mode="Markdown",
                 )
         except Exception:
             pass  # Non-critical
