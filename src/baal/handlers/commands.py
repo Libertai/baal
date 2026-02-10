@@ -202,6 +202,97 @@ async def delete_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     await update.message.reply_text(f"Agent \"{agent['name']}\" deleted.")
 
 
+# ── /repair ────────────────────────────────────────────────────────────
+
+async def repair_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Retry deployment for a failed agent."""
+    db = _get_db(context)
+    deployer = _get_deployer(context)
+    user_id = update.effective_user.id
+
+    if not context.args:
+        await update.message.reply_text("Usage: /repair <agent_id>")
+        return
+
+    try:
+        agent_id = int(context.args[0])
+    except ValueError:
+        await update.message.reply_text("Agent ID must be a number.")
+        return
+
+    agent = await db.get_agent(agent_id)
+    if not agent or agent["owner_id"] != user_id:
+        await update.message.reply_text("Agent not found or you don't own it.")
+        return
+
+    if agent["deployment_status"] not in ("failed", "deploying"):
+        await update.message.reply_text(f"Agent \"{agent['name']}\" is already deployed (status: {agent['deployment_status']}).")
+        return
+
+    if not agent["instance_hash"]:
+        await update.message.reply_text("No instance hash found. Please delete and recreate the agent.")
+        return
+
+    await update.message.reply_text(f"Repairing agent \"{agent['name']}\"...\nChecking VM allocation...")
+
+    # Get CRN URL from database or try to find it
+    crn_url = agent.get("crn_url")
+    if not crn_url:
+        await update.message.reply_text("No CRN URL found. Cannot repair.")
+        return
+
+    # Check allocation
+    instance_hash = agent["instance_hash"]
+    alloc = await deployer.wait_for_allocation(instance_hash, crn_url, retries=3, delay=5)
+
+    if not alloc:
+        await update.message.reply_text("VM not allocated yet. Wait a bit and try /repair again.")
+        return
+
+    vm_ip = alloc["vm_ipv4"]
+    ssh_port = alloc["ssh_port"]
+    await update.message.reply_text(f"VM found at {vm_ip}:{ssh_port}\nRetrying SSH deployment...")
+
+    # Get agent config
+    libertai_api_key = await db.get_user_api_key(user_id)
+    if not libertai_api_key:
+        settings = _get_settings(context)
+        libertai_api_key = settings.libertai_api_key
+
+    # Retry deployment
+    deploy_result = await deployer.deploy_agent(
+        vm_ip=vm_ip,
+        ssh_port=ssh_port,
+        agent_name=agent["name"],
+        system_prompt=agent["system_prompt"],
+        model=agent["model"],
+        libertai_api_key=libertai_api_key,
+        agent_secret=agent["auth_token"],
+        instance_hash=instance_hash,
+        owner_chat_id=str(user_id),
+    )
+
+    if deploy_result["status"] != "success":
+        await db.update_agent_deployment(agent_id, deployment_status="failed")
+        await update.message.reply_text(f"Repair failed: {deploy_result.get('error', 'unknown')}")
+        return
+
+    vm_url = deploy_result["vm_url"]
+    await db.update_agent_deployment(
+        agent_id,
+        deployment_status="deployed",
+        vm_ipv6=vm_ip,
+        vm_url=vm_url,
+    )
+
+    deep_link = f"https://t.me/{context.bot.username}?start=agent_{agent_id}"
+    await update.message.reply_text(
+        f"✅ Agent \"{agent['name']}\" repaired!\n\n"
+        f"🌐 URL: {vm_url}\n"
+        f"💬 Chat: {deep_link}"
+    )
+
+
 # ── /create wizard ─────────────────────────────────────────────────────
 
 async def create_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:

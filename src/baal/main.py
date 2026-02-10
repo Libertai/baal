@@ -14,6 +14,7 @@ from baal.handlers.commands import (
     help_command,
     list_command,
     manage_command,
+    repair_command,
     start_command,
     verbose_command,
 )
@@ -74,6 +75,7 @@ def create_application(settings: Settings | None = None) -> Application:
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("list", list_command))
     app.add_handler(CommandHandler("delete", delete_command))
+    app.add_handler(CommandHandler("repair", repair_command))
     app.add_handler(CommandHandler("manage", manage_command))
     app.add_handler(CommandHandler("login", login_command))
     app.add_handler(CommandHandler("logout", logout_command))

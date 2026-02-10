@@ -556,16 +556,29 @@ class AlephDeployer:
             )
             ssh_proc = await asyncio.create_subprocess_exec(
                 *ssh_cmd,
-                stdin=tar_proc.stdout,
+                stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            # Allow tar to receive SIGPIPE if ssh exits early
-            tar_proc.stdout.close()  # type: ignore[union-attr]
 
+            # Pipe tar output to SSH input
+            async def pipe_data():
+                if tar_proc.stdout and ssh_proc.stdin:
+                    while True:
+                        chunk = await tar_proc.stdout.read(8192)
+                        if not chunk:
+                            break
+                        ssh_proc.stdin.write(chunk)
+                        await ssh_proc.stdin.drain()
+                    ssh_proc.stdin.close()
+                    await ssh_proc.stdin.wait_closed()
+
+            # Run piping and wait for processes
+            pipe_task = asyncio.create_task(pipe_data())
             ssh_stdout, ssh_stderr = await asyncio.wait_for(
                 ssh_proc.communicate(), timeout=timeout
             )
+            await pipe_task
             await tar_proc.wait()
 
             return (
