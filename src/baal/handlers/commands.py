@@ -376,7 +376,20 @@ async def update_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     user_id = update.effective_user.id
 
     if not context.args:
-        await update.message.reply_text("Usage: /update <agent_id>")
+        # Show agent picker for running agents
+        agents = await db.list_agents(user_id)
+        running = [a for a in agents if a["deployment_status"] == "running"]
+        if not running:
+            await update.message.reply_text("No running agents to update.")
+            return
+        keyboard = [
+            [InlineKeyboardButton(f"{a['name']} (#{a['id']})", callback_data=f"update_agent:{a['id']}")]
+            for a in running
+        ]
+        await update.message.reply_text(
+            "Select an agent to update:",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+        )
         return
 
     try:
@@ -451,7 +464,20 @@ async def repair_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     user_id = update.effective_user.id
 
     if not context.args:
-        await update.message.reply_text("Usage: /repair <agent_id>")
+        # Show agent picker for failed/deploying agents
+        agents = await db.list_agents(user_id)
+        repairable = [a for a in agents if a["deployment_status"] in ("failed", "deploying")]
+        if not repairable:
+            await update.message.reply_text("No agents need repair.")
+            return
+        keyboard = [
+            [InlineKeyboardButton(f"{a['name']} (#{a['id']})", callback_data=f"repair_agent:{a['id']}")]
+            for a in repairable
+        ]
+        await update.message.reply_text(
+            "Select an agent to repair:",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+        )
         return
 
     try:

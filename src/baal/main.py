@@ -22,6 +22,7 @@ from baal.handlers.commands import (
     update_command,
     verbose_command,
 )
+
 from baal.services.deployer import AlephDeployer
 from baal.services.rate_limiter import RateLimiter
 
@@ -120,6 +121,13 @@ async def handle_callback_query(update, context) -> None:
 
     elif data == "delete_cancelled":
         await delete_cancelled_callback(update, context)
+
+    elif data.startswith("update_agent:"):
+        agent_id = int(data.split(":")[-1])
+        context.args = [str(agent_id)]
+        await query.answer()
+        cmd_update = make_command_update(update)
+        await update_command(cmd_update, context)
 
     elif data.startswith("retry_deploy:") or data.startswith("repair_agent:"):
         agent_id = int(data.split(":")[-1])
