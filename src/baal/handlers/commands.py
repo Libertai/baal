@@ -702,6 +702,16 @@ async def create_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     return ConversationHandler.END
 
 
+async def create_exit_silently(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Exit wizard silently when user switches to another action."""
+    # Clean up user data
+    context.user_data.pop("create_name", None)
+    context.user_data.pop("create_prompt", None)
+    context.user_data.pop("create_model", None)
+    # Exit without message since they're doing something else
+    return ConversationHandler.END
+
+
 # ── Background deployment task ─────────────────────────────────────────
 
 async def _deploy_agent_background(
@@ -946,6 +956,27 @@ def build_create_conversation_handler() -> ConversationHandler:
                 CommandHandler("cancel", create_cancel),
             ],
         },
-        fallbacks=[CommandHandler("cancel", create_cancel)],
+        fallbacks=[
+            # Explicit cancel command
+            CommandHandler("cancel", create_cancel),
+            # Exit silently when user switches to other commands
+            CommandHandler("start", create_exit_silently),
+            CommandHandler("list", create_exit_silently),
+            CommandHandler("manage", create_exit_silently),
+            CommandHandler("help", create_exit_silently),
+            CommandHandler("account", create_exit_silently),
+            CommandHandler("delete", create_exit_silently),
+            CommandHandler("repair", create_exit_silently),
+            CommandHandler("dashboard", create_exit_silently),
+            CommandHandler("verbose", create_exit_silently),
+            CommandHandler("login", create_exit_silently),
+            CommandHandler("logout", create_exit_silently),
+            # Exit silently when user clicks buttons to switch context
+            CallbackQueryHandler(create_exit_silently, pattern=r"^chat_agent:"),
+            CallbackQueryHandler(create_exit_silently, pattern=r"^quick_list$"),
+            CallbackQueryHandler(create_exit_silently, pattern=r"^quick_account$"),
+            CallbackQueryHandler(create_exit_silently, pattern=r"^quick_help$"),
+            CallbackQueryHandler(create_exit_silently, pattern=r"^nav_"),
+        ],
         per_message=False,
     )
