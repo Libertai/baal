@@ -463,6 +463,13 @@ async def create_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     # Exit chat mode if currently chatting with an agent
     context.user_data.pop("current_agent_id", None)
 
+    # Handle both command and callback query
+    if update.callback_query:
+        await update.callback_query.answer()
+        message = update.callback_query.message
+    else:
+        message = update.message
+
     db = _get_db(context)
     settings = context.bot_data["settings"]
     user_id = update.effective_user.id
@@ -470,12 +477,12 @@ async def create_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
 
     count = await db.count_agents(user_id)
     if count >= settings.max_agents_per_user:
-        await update.message.reply_text(
+        await message.reply_text(
             f"You've reached the limit of {settings.max_agents_per_user} agents."
         )
         return ConversationHandler.END
 
-    await update.message.reply_text(
+    await message.reply_text(
         "Let's create a new agent!\n\n"
         "**Step 1/3:** What should your agent be named?"
         ,
