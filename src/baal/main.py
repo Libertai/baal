@@ -172,6 +172,41 @@ async def handle_callback_query(update, context) -> None:
             parse_mode="Markdown"
         )
 
+    elif data == "toggle_tools":
+        db = context.bot_data["db"]
+        user_id = update.effective_user.id
+
+        # Get current setting
+        current = await db.get_user_show_tools(user_id)
+        # Toggle it
+        new_setting = not current
+        await db.set_user_show_tools(user_id, new_setting)
+
+        # Show feedback
+        status = "visible" if new_setting else "hidden"
+        await query.answer(f"Tool calls now {status}")
+
+        # Update the button text
+        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+        tool_emoji = "👁️" if new_setting else "🙈"
+        tool_text = "Hide Tools" if new_setting else "Show Tools"
+
+        updated_keyboard = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("🏠 Main Menu", callback_data="nav_main"),
+                InlineKeyboardButton("📋 My Agents", callback_data="nav_list"),
+            ],
+            [
+                InlineKeyboardButton("⚙️ Account", callback_data="nav_account"),
+                InlineKeyboardButton(f"{tool_emoji} {tool_text}", callback_data="toggle_tools"),
+            ],
+        ])
+
+        try:
+            await query.edit_message_reply_markup(reply_markup=updated_keyboard)
+        except Exception:
+            pass  # Message might be too old to edit
+
     else:
         await query.answer("Unknown action")
 

@@ -173,11 +173,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         if interaction_count == 0:
             from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
+            # Check current tool visibility setting
+            tool_emoji = "👁️" if show_tools else "🙈"
+            tool_text = "Hide Tools" if show_tools else "Show Tools"
+
             nav_keyboard = InlineKeyboardMarkup([
                 [
                     InlineKeyboardButton("🏠 Main Menu", callback_data="nav_main"),
                     InlineKeyboardButton("📋 My Agents", callback_data="nav_list"),
+                ],
+                [
                     InlineKeyboardButton("⚙️ Account", callback_data="nav_account"),
+                    InlineKeyboardButton(f"{tool_emoji} {tool_text}", callback_data="toggle_tools"),
                 ],
             ])
             # Just show the navigation buttons without extra text
