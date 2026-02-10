@@ -254,7 +254,8 @@ async def repair_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     await update.message.reply_text(f"VM found at {vm_ip}:{ssh_port}\nRetrying SSH deployment...")
 
     # Get agent config
-    libertai_api_key = await db.get_user_api_key(user_id)
+    user = await db.get_user(user_id)
+    libertai_api_key = user.get("api_key") if user else None
     if not libertai_api_key:
         settings = _get_settings(context)
         libertai_api_key = settings.libertai_api_key
