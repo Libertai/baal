@@ -36,6 +36,7 @@ class Database:
             CREATE TABLE IF NOT EXISTS users (
                 telegram_id INTEGER PRIMARY KEY,
                 api_key TEXT,
+                show_tools BOOLEAN DEFAULT 1,
                 created_at TEXT NOT NULL DEFAULT (datetime('now'))
             );
 
@@ -102,6 +103,19 @@ class Database:
         await self.db.execute(
             "UPDATE users SET api_key = ? WHERE telegram_id = ?",
             (api_key, telegram_id),
+        )
+        await self.db.commit()
+
+    async def get_user_show_tools(self, telegram_id: int) -> bool:
+        row = await self.fetch_one(
+            "SELECT show_tools FROM users WHERE telegram_id = ?", (telegram_id,)
+        )
+        return bool(row["show_tools"]) if row else True
+
+    async def set_user_show_tools(self, telegram_id: int, show: bool) -> None:
+        await self.db.execute(
+            "UPDATE users SET show_tools = ? WHERE telegram_id = ?",
+            (1 if show else 0, telegram_id),
         )
         await self.db.commit()
 

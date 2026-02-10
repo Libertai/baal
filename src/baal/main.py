@@ -15,6 +15,7 @@ from baal.handlers.commands import (
     list_command,
     manage_command,
     start_command,
+    verbose_command,
 )
 from baal.services.deployer import AlephDeployer
 from baal.services.rate_limiter import RateLimiter
@@ -77,6 +78,7 @@ def create_application(settings: Settings | None = None) -> Application:
     app.add_handler(CommandHandler("login", login_command))
     app.add_handler(CommandHandler("logout", logout_command))
     app.add_handler(CommandHandler("account", account_command))
+    app.add_handler(CommandHandler("verbose", verbose_command))
 
     # Generic text message handler (chat routing)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))

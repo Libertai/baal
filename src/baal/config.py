@@ -4,7 +4,7 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
 
-    model_config = {"env_prefix": ""}
+    model_config = {"env_prefix": "", "env_file": ".env"}
 
     telegram_bot_token: str
     libertai_api_key: str
@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     # Limits
     free_tier_daily_messages: int = 50
     max_agents_per_user: int = 3
-    default_model: str = "hermes-3-8b-tee"
+    default_model: str = "qwen3-coder-next"
 
     # Database
     db_path: str = "baal.db"

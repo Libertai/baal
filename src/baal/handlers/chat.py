@@ -10,7 +10,7 @@ from telegram.ext import ContextTypes
 
 from baal.database.db import Database
 from baal.services.encryption import decrypt
-from baal.services.proxy import send_message
+from baal.services.proxy import stream_messages
 from baal.services.rate_limiter import RateLimiter
 
 logger = logging.getLogger(__name__)
@@ -94,24 +94,37 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return
 
     auth_token = decrypt(agent["auth_token"], encryption_key)
+    agent_name = agent["name"]
+    show_tools = await db.get_user_show_tools(telegram_id)
 
     # Send typing indicator
     await update.message.chat.send_action(ChatAction.TYPING)
 
-    # Proxy the message to the agent VM
+    # Stream messages from the agent VM
     chat_id = str(update.effective_chat.id)
     try:
-        response = await send_message(
+        async for event in stream_messages(
             agent_url=agent["vm_url"],
             auth_token=auth_token,
             message=update.message.text,
             chat_id=chat_id,
-        )
+        ):
+            event_type = event.get("type")
+
+            if event_type == "text":
+                await _split_and_send(update, f"*{agent_name}*: {event['content']}")
+                # Keep typing indicator alive for next iteration
+                await update.message.chat.send_action(ChatAction.TYPING)
+
+            elif event_type == "tool_use" and show_tools:
+                await update.message.reply_text(f"\u2699\ufe0f {event['name']}")
+                await update.message.chat.send_action(ChatAction.TYPING)
+
+            elif event_type == "done":
+                break
+
     except Exception as e:
         logger.error(f"Proxy error for agent {agent_id}: {e}")
         await update.message.reply_text(
             "Sorry, couldn't reach the agent right now. Please try again in a moment."
         )
-        return
-
-    await _split_and_send(update, response)

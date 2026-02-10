@@ -25,8 +25,8 @@ logger = logging.getLogger(__name__)
 NAME, PROMPT, MODEL, CONFIRM = range(4)
 
 AVAILABLE_MODELS = {
-    "hermes-3-8b-tee": "Hermes 3 8B (TEE)",
-    "gemma-3-27b": "Gemma 3 27B",
+    "qwen3-coder-next": "Qwen 3 Coder Next",
+    "glm-4.7": "GLM 4.7",
 }
 
 
@@ -100,12 +100,27 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         "/list — List your agents with status\n"
         "/delete <id> — Delete an agent and destroy its VM\n"
         "/manage — Exit chat mode, return to control plane\n"
+        "/verbose — Toggle tool call visibility\n"
         "/login <api\\_key> — Connect your LibertAI account\n"
         "/logout — Disconnect your LibertAI account\n"
         "/account — Check account status and balance\n"
         "/help — Show this message",
         parse_mode="Markdown",
     )
+
+
+# ── /verbose ───────────────────────────────────────────────────────────
+
+async def verbose_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Toggle tool visibility for the user."""
+    db = _get_db(context)
+    telegram_id = update.effective_user.id
+    await db.ensure_user(telegram_id)
+    current = await db.get_user_show_tools(telegram_id)
+    new_value = not current
+    await db.set_user_show_tools(telegram_id, new_value)
+    state = "ON" if new_value else "OFF"
+    await update.message.reply_text(f"Tool visibility: {state}")
 
 
 # ── /manage ────────────────────────────────────────────────────────────
@@ -447,4 +462,5 @@ def build_create_conversation_handler() -> ConversationHandler:
             ],
         },
         fallbacks=[CommandHandler("cancel", create_cancel)],
+        per_message=False,
     )

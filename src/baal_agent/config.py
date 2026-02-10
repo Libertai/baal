@@ -13,4 +13,5 @@ class AgentSettings(BaseSettings):
     agent_secret: str  # Shared secret for bot<->agent auth
     port: int = 8080
     db_path: str = "agent.db"
-    max_history: int = 20
+    max_history: int = 50
+    max_tool_iterations: int = 15

@@ -65,33 +65,58 @@ class AlephDeployer:
     # ── CRN discovery ──────────────────────────────────────────────────
 
     async def get_available_crns(self) -> list[dict]:
-        """Fetch active CRNs from the scheduler, sorted by score descending."""
+        """Fetch CRNs from crns-list.aleph.sh, filtered and sorted by load."""
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
-                resp = await client.get(
-                    "https://scheduler.api.aleph.cloud/api/v0/allocation/resource_nodes"
-                )
-                if resp.status_code == 200:
-                    data = resp.json()
-                    crns = []
-                    for node in data.get("resource_nodes", []):
-                        if (
-                            node.get("status") == "active"
-                            and node.get("payment_receiver_address")
-                        ):
-                            crns.append(
-                                {
-                                    "hash": node.get("hash"),
-                                    "name": node.get("name"),
-                                    "url": node.get("address"),
-                                    "payment_address": node.get(
-                                        "payment_receiver_address"
-                                    ),
-                                    "score": node.get("score", 0),
-                                }
-                            )
-                    crns.sort(key=lambda x: x.get("score", 0), reverse=True)
-                    return crns
+                resp = await client.get("https://crns-list.aleph.sh/crns.json")
+                if resp.status_code != 200:
+                    logger.warning(f"CRN list returned {resp.status_code}")
+                    return []
+
+                nodes = resp.json()
+                crns = []
+                for node in nodes:
+                    # Require both IPv6 checks passing
+                    ipv6 = node.get("ipv6_check", {})
+                    if not (ipv6.get("host") is True and ipv6.get("vm") is True):
+                        continue
+                    # Must support qemu and have a payment address
+                    if not node.get("qemu_support"):
+                        continue
+                    if not node.get("payment_receiver_address"):
+                        continue
+                    # Must have live system usage data
+                    usage = node.get("system_usage")
+                    if not usage or not usage.get("active"):
+                        continue
+
+                    # Compute a load score (lower = less loaded = better)
+                    cpu = usage.get("cpu", {})
+                    mem = usage.get("mem", {})
+                    cpu_count = cpu.get("count", 1)
+                    load5 = cpu.get("load_average", {}).get("load5", 0)
+                    cpu_usage_pct = load5 / max(cpu_count, 1)
+                    mem_total = mem.get("total_kB", 1)
+                    mem_avail = mem.get("available_kB", 0)
+                    mem_usage_pct = 1.0 - (mem_avail / max(mem_total, 1))
+                    # Weighted: 60% CPU, 40% memory
+                    load_score = 0.6 * cpu_usage_pct + 0.4 * mem_usage_pct
+
+                    crns.append(
+                        {
+                            "hash": node.get("hash"),
+                            "name": node.get("name"),
+                            "url": node.get("address", "").rstrip("/"),
+                            "payment_address": node["payment_receiver_address"],
+                            "score": node.get("score", 0),
+                            "load_score": load_score,
+                        }
+                    )
+
+                # Sort by load (least loaded first), break ties by node score
+                crns.sort(key=lambda c: (c["load_score"], -c["score"]))
+                logger.info(f"Found {len(crns)} eligible CRNs")
+                return crns
         except Exception as e:
             logger.warning(f"Failed to fetch CRNs: {e}")
         return []
@@ -460,11 +485,13 @@ class AlephDeployer:
                 agent_secret: str
                 port: int = 8080
                 db_path: str = "agent.db"
-                max_history: int = 20
+                max_history: int = 50
+                max_tool_iterations: int = 15
         """)
 
         files["database.py"] = textwrap.dedent("""\
             from __future__ import annotations
+            import json
             from datetime import datetime, timezone
             import aiosqlite
 
@@ -482,7 +509,9 @@ class AlephDeployer:
                         "    id INTEGER PRIMARY KEY AUTOINCREMENT,"
                         "    chat_id TEXT NOT NULL,"
                         "    role TEXT NOT NULL,"
-                        "    content TEXT NOT NULL,"
+                        "    content TEXT,"
+                        "    tool_calls TEXT,"
+                        "    tool_call_id TEXT,"
                         "    created_at TEXT NOT NULL DEFAULT (datetime('now'))"
                         ");"
                         "CREATE INDEX IF NOT EXISTS idx_messages_chat"
@@ -500,21 +529,34 @@ class AlephDeployer:
                         raise RuntimeError("Database not initialized")
                     return self._db
 
-                async def add_message(self, chat_id: str, role: str, content: str) -> None:
+                async def add_message(self, chat_id, role, content, *, tool_calls=None, tool_call_id=None):
                     now = datetime.now(timezone.utc).isoformat()
+                    tc_json = json.dumps(tool_calls) if tool_calls else None
                     await self.db.execute(
-                        "INSERT INTO messages (chat_id, role, content, created_at) VALUES (?, ?, ?, ?)",
-                        (chat_id, role, content, now),
+                        "INSERT INTO messages (chat_id, role, content, tool_calls, tool_call_id, created_at) "
+                        "VALUES (?, ?, ?, ?, ?, ?)",
+                        (chat_id, role, content, tc_json, tool_call_id, now),
                     )
                     await self.db.commit()
 
-                async def get_history(self, chat_id: str, limit: int = 20) -> list[dict]:
+                async def get_history(self, chat_id: str, limit: int = 50) -> list[dict]:
                     cursor = await self.db.execute(
-                        "SELECT role, content FROM messages WHERE chat_id = ? ORDER BY created_at DESC LIMIT ?",
+                        "SELECT role, content, tool_calls, tool_call_id "
+                        "FROM messages WHERE chat_id = ? ORDER BY created_at DESC LIMIT ?",
                         (chat_id, limit),
                     )
                     rows = await cursor.fetchall()
-                    return [dict(r) for r in reversed(rows)]
+                    messages = []
+                    for r in reversed(rows):
+                        msg = {"role": r["role"]}
+                        if r["content"] is not None:
+                            msg["content"] = r["content"]
+                        if r["tool_calls"]:
+                            msg["tool_calls"] = json.loads(r["tool_calls"])
+                        if r["tool_call_id"]:
+                            msg["tool_call_id"] = r["tool_call_id"]
+                        messages.append(msg)
+                    return messages
         """)
 
         files["inference.py"] = textwrap.dedent("""\
@@ -525,29 +567,195 @@ class AlephDeployer:
                 def __init__(self, api_key: str, base_url: str = "https://api.libertai.io/v1"):
                     self.client = AsyncOpenAI(base_url=base_url, api_key=api_key)
 
-                async def chat(self, messages: list[dict], model: str) -> str:
+                async def chat(self, messages: list[dict], model: str, tools: list[dict] | None = None):
+                    kwargs = {"model": model, "messages": messages}
+                    if tools:
+                        kwargs["tools"] = tools
                     try:
-                        response = await self.client.chat.completions.create(
-                            model=model, messages=messages
-                        )
+                        response = await self.client.chat.completions.create(**kwargs)
                     except Exception:
                         await asyncio.sleep(2)
-                        response = await self.client.chat.completions.create(
-                            model=model, messages=messages
-                        )
-                    return response.choices[0].message.content
+                        response = await self.client.chat.completions.create(**kwargs)
+                    return response.choices[0].message
+        """)
+
+        files["tools.py"] = textwrap.dedent("""\
+            from __future__ import annotations
+            import asyncio
+            import json
+            from pathlib import Path
+
+            MAX_TOOL_OUTPUT = 30_000
+
+            TOOL_DEFINITIONS = [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "bash",
+                        "description": "Run a bash command and return stdout, stderr, and exit code.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "command": {"type": "string", "description": "The bash command to execute."},
+                                "timeout": {"type": "integer", "description": "Timeout in seconds (default 60, max 300)."},
+                            },
+                            "required": ["command"],
+                        },
+                    },
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "read_file",
+                        "description": "Read a file and return its contents with line numbers.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "path": {"type": "string", "description": "Path to the file."},
+                                "offset": {"type": "integer", "description": "Line number to start from (1-based)."},
+                                "limit": {"type": "integer", "description": "Max lines to read."},
+                            },
+                            "required": ["path"],
+                        },
+                    },
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "write_file",
+                        "description": "Write content to a file, creating parent directories as needed.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "path": {"type": "string", "description": "Path to the file."},
+                                "content": {"type": "string", "description": "The content to write."},
+                            },
+                            "required": ["path", "content"],
+                        },
+                    },
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "edit_file",
+                        "description": "Find and replace an exact string in a file (first occurrence).",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "path": {"type": "string", "description": "Path to the file."},
+                                "old_string": {"type": "string", "description": "The exact string to find."},
+                                "new_string": {"type": "string", "description": "The replacement string."},
+                            },
+                            "required": ["path", "old_string", "new_string"],
+                        },
+                    },
+                },
+            ]
+
+            def _truncate(text):
+                if len(text) <= MAX_TOOL_OUTPUT:
+                    return text
+                half = MAX_TOOL_OUTPUT // 2
+                return text[:half] + f"\\n\\n... truncated ({len(text)} chars total) ...\\n\\n" + text[-half:]
+
+            async def _exec_bash(args):
+                command = args["command"]
+                timeout = min(args.get("timeout", 60), 300)
+                try:
+                    proc = await asyncio.create_subprocess_shell(
+                        command, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+                    )
+                    stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+                    out = stdout.decode("utf-8", errors="replace")
+                    err = stderr.decode("utf-8", errors="replace")
+                    code = proc.returncode or 0
+                    parts = []
+                    if out:
+                        parts.append(out)
+                    if err:
+                        parts.append(f"[stderr]\\n{err}")
+                    parts.append(f"[exit code: {code}]")
+                    return _truncate("\\n".join(parts))
+                except asyncio.TimeoutError:
+                    return f"[timed out after {timeout}s]"
+                except Exception as e:
+                    return f"[error: {e}]"
+
+            async def _exec_read_file(args):
+                path = args["path"]
+                offset = args.get("offset", 1)
+                limit = args.get("limit")
+                try:
+                    with open(path, "r", errors="replace") as f:
+                        lines = f.readlines()
+                    start = max(0, offset - 1)
+                    end = start + limit if limit else len(lines)
+                    numbered = [f"{i + start + 1}\\t{line}" for i, line in enumerate(lines[start:end])]
+                    return _truncate("".join(numbered)) if numbered else "(empty file)"
+                except FileNotFoundError:
+                    return f"[error: file not found: {path}]"
+                except Exception as e:
+                    return f"[error: {e}]"
+
+            async def _exec_write_file(args):
+                path = args["path"]
+                content = args["content"]
+                try:
+                    Path(path).parent.mkdir(parents=True, exist_ok=True)
+                    with open(path, "w") as f:
+                        f.write(content)
+                    return f"Wrote {len(content)} bytes to {path}"
+                except Exception as e:
+                    return f"[error: {e}]"
+
+            async def _exec_edit_file(args):
+                path = args["path"]
+                old_string = args["old_string"]
+                new_string = args["new_string"]
+                try:
+                    with open(path, "r") as f:
+                        content = f.read()
+                    if old_string not in content:
+                        return f"[error: old_string not found in {path}]"
+                    content = content.replace(old_string, new_string, 1)
+                    with open(path, "w") as f:
+                        f.write(content)
+                    return f"Edited {path}"
+                except FileNotFoundError:
+                    return f"[error: file not found: {path}]"
+                except Exception as e:
+                    return f"[error: {e}]"
+
+            TOOL_HANDLERS = {
+                "bash": _exec_bash,
+                "read_file": _exec_read_file,
+                "write_file": _exec_write_file,
+                "edit_file": _exec_edit_file,
+            }
+
+            async def execute_tool(name, arguments):
+                handler = TOOL_HANDLERS.get(name)
+                if handler is None:
+                    return f"[error: unknown tool '{name}']"
+                if isinstance(arguments, str):
+                    arguments = json.loads(arguments)
+                return await handler(arguments)
         """)
 
         files["main.py"] = textwrap.dedent("""\
+            import json
+            import logging
             import secrets
             from contextlib import asynccontextmanager
             from fastapi import FastAPI, Request
-            from fastapi.responses import JSONResponse
+            from fastapi.responses import JSONResponse, StreamingResponse
             from pydantic import BaseModel
             from baal_agent.config import AgentSettings
             from baal_agent.database import AgentDatabase
             from baal_agent.inference import InferenceClient
+            from baal_agent.tools import TOOL_DEFINITIONS, execute_tool
 
+            logger = logging.getLogger(__name__)
             settings = AgentSettings()
             db = AgentDatabase(db_path=settings.db_path)
             inference = InferenceClient(api_key=settings.libertai_api_key)
@@ -573,18 +781,59 @@ class AlephDeployer:
                 message: str
                 chat_id: str
 
-            class ChatResponse(BaseModel):
-                response: str
+            def _sse_event(data: dict) -> str:
+                return f"data: {json.dumps(data)}\\n\\n"
 
-            @app.post("/chat", response_model=ChatResponse)
+            @app.post("/chat")
             async def chat(req: ChatRequest):
-                await db.add_message(req.chat_id, "user", req.message)
-                history = await db.get_history(req.chat_id, limit=settings.max_history)
-                messages = [{"role": "system", "content": settings.system_prompt}]
-                messages.extend(history)
-                reply = await inference.chat(messages=messages, model=settings.model)
-                await db.add_message(req.chat_id, "assistant", reply)
-                return ChatResponse(response=reply)
+                async def event_stream():
+                    await db.add_message(req.chat_id, "user", req.message)
+                    history = await db.get_history(req.chat_id, limit=settings.max_history)
+                    messages = [{"role": "system", "content": settings.system_prompt}]
+                    messages.extend(history)
+
+                    for _iteration in range(settings.max_tool_iterations):
+                        assistant_msg = await inference.chat(
+                            messages=messages, model=settings.model, tools=TOOL_DEFINITIONS
+                        )
+                        text_content = assistant_msg.content
+                        tool_calls = assistant_msg.tool_calls
+
+                        tc_for_db = None
+                        if tool_calls:
+                            tc_for_db = [
+                                {"id": tc.id, "type": "function", "function": {"name": tc.function.name, "arguments": tc.function.arguments}}
+                                for tc in tool_calls
+                            ]
+
+                        await db.add_message(req.chat_id, "assistant", text_content, tool_calls=tc_for_db)
+
+                        assistant_dict = {"role": "assistant"}
+                        if text_content:
+                            assistant_dict["content"] = text_content
+                        if tc_for_db:
+                            assistant_dict["tool_calls"] = tc_for_db
+                        messages.append(assistant_dict)
+
+                        if text_content:
+                            yield _sse_event({"type": "text", "content": text_content})
+
+                        if not tool_calls:
+                            yield _sse_event({"type": "done"})
+                            return
+
+                        for tc in tool_calls:
+                            name = tc.function.name
+                            arguments = tc.function.arguments
+                            yield _sse_event({"type": "tool_use", "name": name, "input": arguments})
+                            result = await execute_tool(name, arguments)
+                            await db.add_message(req.chat_id, "tool", result, tool_call_id=tc.id)
+                            messages.append({"role": "tool", "tool_call_id": tc.id, "content": result})
+
+                    yield _sse_event({"type": "text", "content": "(Reached maximum tool iterations)"})
+                    yield _sse_event({"type": "done"})
+
+                return StreamingResponse(event_stream(), media_type="text/event-stream")
 
             @app.get("/health")
             async def health():
