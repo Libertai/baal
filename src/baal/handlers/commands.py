@@ -17,7 +17,7 @@ from telegram.ext import (
 
 from baal.database.db import Database
 from baal.services.deployer import AlephDeployer
-from baal.services.encryption import encrypt
+from baal.services.encryption import decrypt, encrypt
 
 logger = logging.getLogger(__name__)
 
@@ -259,6 +259,10 @@ async def repair_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if not libertai_api_key:
         libertai_api_key = context.bot_data["settings"].libertai_api_key
 
+    # Decrypt agent secret (stored encrypted in DB)
+    encryption_key = context.bot_data["settings"].bot_encryption_key
+    agent_secret = decrypt(agent["auth_token"], encryption_key)
+
     # Retry deployment
     deploy_result = await deployer.deploy_agent(
         vm_ip=vm_ip,
@@ -267,7 +271,7 @@ async def repair_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         system_prompt=agent["system_prompt"],
         model=agent["model"],
         libertai_api_key=libertai_api_key,
-        agent_secret=agent["auth_token"],
+        agent_secret=agent_secret,
         instance_hash=instance_hash,
         owner_chat_id=str(user_id),
     )
