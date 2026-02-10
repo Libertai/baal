@@ -227,6 +227,7 @@ def create_application(settings: Settings | None = None) -> Application:
     app = (
         Application.builder()
         .token(settings.telegram_bot_token)
+        .concurrent_updates(True)
         .post_init(post_init)
         .post_shutdown(post_shutdown)
         .build()
