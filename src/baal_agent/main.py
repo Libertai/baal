@@ -337,16 +337,29 @@ async def chat(req: ChatRequest):
             messages.extend(history)
 
             for _iteration in range(settings.max_tool_iterations):
-                # Call inference with a timeout to prevent indefinite hangs
-                # when the LibertAI API is slow or unresponsive.
+                # Call inference with keepalive to prevent CRN gateway timeouts.
+                inference_coro = inference.chat(
+                    messages=messages, model=settings.model, tools=tools
+                )
+                inference_q: asyncio.Queue = asyncio.Queue()
+                inference_keepalive = asyncio.create_task(
+                    _with_keepalive(inference_coro, inference_q)
+                )
+                assistant_msg = None
                 try:
-                    assistant_msg = await asyncio.wait_for(
-                        inference.chat(
-                            messages=messages, model=settings.model, tools=tools
-                        ),
-                        timeout=_INFERENCE_TIMEOUT,
-                    )
+                    while True:
+                        msg_type, msg_val = await asyncio.wait_for(
+                            inference_q.get(), timeout=_INFERENCE_TIMEOUT
+                        )
+                        if msg_type == "keepalive":
+                            yield _sse_keepalive()
+                        elif msg_type == "result":
+                            assistant_msg = msg_val
+                            break
+                        elif msg_type == "error":
+                            raise msg_val
                 except asyncio.TimeoutError:
+                    inference_keepalive.cancel()
                     logger.error(
                         f"Inference timed out after {_INFERENCE_TIMEOUT}s"
                     )
@@ -356,6 +369,11 @@ async def chat(req: ChatRequest):
                     })
                     yield _sse_event({"type": "done"})
                     return
+                finally:
+                    try:
+                        await inference_keepalive
+                    except asyncio.CancelledError:
+                        pass
 
                 text_content = assistant_msg.content
                 tool_calls = assistant_msg.tool_calls
