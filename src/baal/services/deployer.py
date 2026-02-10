@@ -8,6 +8,7 @@ import logging
 import os
 import shlex
 import textwrap
+import time
 from pathlib import Path
 
 import httpx
@@ -34,6 +35,9 @@ ROOTFS_IMAGES = {
 
 GATEWAY_API_URL = "https://api.2n6.me"
 
+# How long a failed CRN stays blacklisted (seconds)
+CRN_BLACKLIST_TTL = 600  # 10 minutes
+
 
 def _safe_write_file_command(content: str, filepath: str) -> str:
     """Generate a safe SSH command to write file content via base64 (prevents injection)."""
@@ -54,6 +58,8 @@ class AlephDeployer:
         self.ssh_pubkey = ssh_pubkey
         self.ssh_privkey_path = os.path.expanduser(ssh_privkey_path)
         self._account = None
+        # CRN blacklist: maps CRN URL -> expiry timestamp (monotonic)
+        self._crn_blacklist: dict[str, float] = {}
 
         if ALEPH_SDK_AVAILABLE:
             pk = private_key.removeprefix("0x")
@@ -61,6 +67,33 @@ class AlephDeployer:
                 self._account = ETHAccount(private_key=bytes.fromhex(pk))
             except Exception as e:
                 logger.error(f"Failed to load Aleph account: {e}")
+
+    # ── CRN blacklist ─────────────────────────────────────────────────
+
+    def _blacklist_crn(self, crn_url: str, reason: str) -> None:
+        """Add a CRN to the temporary blacklist."""
+        expiry = time.monotonic() + CRN_BLACKLIST_TTL
+        self._crn_blacklist[crn_url] = expiry
+        logger.info(
+            f"Blacklisted CRN {crn_url} for {CRN_BLACKLIST_TTL}s: {reason}"
+        )
+
+    def _prune_blacklist(self) -> None:
+        """Remove expired entries from the blacklist."""
+        now = time.monotonic()
+        expired = [url for url, exp in self._crn_blacklist.items() if now >= exp]
+        for url in expired:
+            del self._crn_blacklist[url]
+
+    def _is_blacklisted(self, crn_url: str) -> bool:
+        """Check if a CRN is currently blacklisted."""
+        expiry = self._crn_blacklist.get(crn_url)
+        if expiry is None:
+            return False
+        if time.monotonic() >= expiry:
+            del self._crn_blacklist[crn_url]
+            return False
+        return True
 
     # ── CRN discovery ──────────────────────────────────────────────────
 
@@ -114,9 +147,22 @@ class AlephDeployer:
                         }
                     )
 
+                # Filter out blacklisted CRNs
+                self._prune_blacklist()
+                before_count = len(crns)
+                crns = [
+                    c for c in crns
+                    if not self._is_blacklisted(c["url"])
+                ]
+                blacklisted_count = before_count - len(crns)
+                if blacklisted_count > 0:
+                    logger.info(
+                        f"Filtered out {blacklisted_count} blacklisted CRN(s)"
+                    )
+
                 # Sort by load (least loaded first), break ties by node score
                 crns.sort(key=lambda c: (c["load_score"], -c["score"]))
-                logger.info(f"Found {len(crns)} eligible CRNs")
+                logger.info(f"Found {len(crns)} eligible CRNs (after blacklist)")
                 return crns
         except Exception as e:
             logger.warning(f"Failed to fetch CRNs: {e}")
@@ -127,6 +173,7 @@ class AlephDeployer:
     async def create_instance(self, agent_name: str) -> dict:
         """Create an Aleph Cloud VM instance using credits payment.
 
+        Tries multiple CRNs with blacklisting of recently-failed nodes.
         Returns dict with 'status', 'instance_hash', 'crn_url', etc.
         """
         if not ALEPH_SDK_AVAILABLE:
@@ -139,9 +186,10 @@ class AlephDeployer:
         if not crns:
             return {"status": "error", "error": "No CRNs available"}
 
-        # Try up to 3 CRNs if the first ones fail
-        max_crn_attempts = min(3, len(crns))
+        # Try up to 5 CRNs if the first ones fail (many nodes are unreliable)
+        max_crn_attempts = min(5, len(crns))
         last_error = None
+        instance_hash = None
 
         for crn_attempt in range(max_crn_attempts):
             selected = crns[crn_attempt]
@@ -153,7 +201,8 @@ class AlephDeployer:
             payment_receiver = selected["payment_address"]
             logger.info(
                 f"Attempt {crn_attempt + 1}/{max_crn_attempts}: "
-                f"Selected CRN {selected['name']} at {crn_url}"
+                f"Selected CRN {selected['name']} (load={selected['load_score']:.2f}) "
+                f"at {crn_url}"
             )
 
             payment = Payment(
@@ -163,92 +212,106 @@ class AlephDeployer:
             )
 
             try:
-                async with AuthenticatedAlephHttpClient(
-                    account=self._account, api_server=aleph_settings.API_HOST
-                ) as client:
-                    message, status = await client.create_instance(
-                        rootfs=ROOTFS_IMAGES["debian12"],
-                        rootfs_size=20480,
-                        payment=payment,
-                        vcpus=1,
-                        memory=2048,
-                        ssh_keys=[self.ssh_pubkey],
-                        hypervisor=HypervisorType.qemu,
-                        metadata={"name": f"baal-agent-{agent_name}"},
-                        channel="BAAL",
-                        storage_engine=StorageEnum.storage,
-                        sync=True,
-                    )
+                # Only create a new instance if we don't already have one
+                # (instance survives across CRN retries — we just need a CRN to start it)
+                if instance_hash is None:
+                    async with AuthenticatedAlephHttpClient(
+                        account=self._account, api_server=aleph_settings.API_HOST
+                    ) as client:
+                        message, status = await client.create_instance(
+                            rootfs=ROOTFS_IMAGES["debian12"],
+                            rootfs_size=20480,
+                            payment=payment,
+                            vcpus=1,
+                            memory=2048,
+                            ssh_keys=[self.ssh_pubkey],
+                            hypervisor=HypervisorType.qemu,
+                            metadata={"name": f"baal-agent-{agent_name}"},
+                            channel="BAAL",
+                            storage_engine=StorageEnum.storage,
+                            sync=True,
+                        )
 
-                    instance_hash = str(message.item_hash)
-                    logger.info(f"Instance created: {instance_hash}, status: {status}")
+                        instance_hash = str(message.item_hash)
+                        logger.info(f"Instance created: {instance_hash}, status: {status}")
 
-                    # Wait and verify message exists on network before notifying
-                    max_verify_attempts = 6
-                    message_found = False
-                    for attempt in range(max_verify_attempts):
+                        # Wait and verify message exists on network before notifying
+                        max_verify_attempts = 6
+                        message_found = False
+                        for attempt in range(max_verify_attempts):
+                            await asyncio.sleep(5)
+                            try:
+                                async with httpx.AsyncClient(timeout=10.0) as verify_client:
+                                    resp = await verify_client.get(
+                                        f"https://api2.aleph.im/api/v0/messages.json?hashes={instance_hash}"
+                                    )
+                                    if resp.status_code == 200:
+                                        data = resp.json()
+                                        if data.get("messages") and len(data["messages"]) > 0:
+                                            message_found = True
+                                            logger.info(f"Message verified on network after {(attempt+1)*5}s")
+                                            break
+                            except Exception:
+                                pass
+
+                        if not message_found:
+                            logger.warning(f"Message not found on network after {max_verify_attempts*5}s")
+
+                        # Additional wait for CRN propagation
                         await asyncio.sleep(5)
-                        try:
-                            async with httpx.AsyncClient(timeout=10.0) as verify_client:
-                                resp = await verify_client.get(
-                                    f"https://api2.aleph.im/api/v0/messages.json?hashes={instance_hash}"
-                                )
-                                if resp.status_code == 200:
-                                    data = resp.json()
-                                    if data.get("messages") and len(data["messages"]) > 0:
-                                        message_found = True
-                                        logger.info(f"Message verified on network after {(attempt+1)*5}s")
-                                        break
-                        except Exception:
-                            pass
 
-                    if not message_found:
-                        logger.warning(f"Message not found on network after {max_verify_attempts*5}s")
+                # Notify CRN to start (with timeout)
+                try:
+                    async with VmClient(self._account, crn_url) as vm_client:
+                        start_status, start_result = await asyncio.wait_for(
+                            vm_client.start_instance(instance_hash),
+                            timeout=30.0  # 30s — many CRNs need more than 15s
+                        )
+                        if start_status != 200:
+                            error_msg = f"CRN {selected['name']} returned status {start_status}: {start_result}"
+                            logger.warning(error_msg)
+                            last_error = error_msg
+                            self._blacklist_crn(crn_url, error_msg)
+                            continue
 
-                    # Additional wait for CRN propagation
-                    await asyncio.sleep(5)
+                    # Success!
+                    logger.info(f"Successfully started instance on CRN {selected['name']}")
+                    return {
+                        "status": "success",
+                        "instance_hash": instance_hash,
+                        "crn_url": crn_url,
+                    }
 
-                    # Notify CRN to start (with timeout)
-                    try:
-                        async with VmClient(self._account, crn_url) as vm_client:
-                            # Set timeout for CRN notification
-                            start_status, start_result = await asyncio.wait_for(
-                                vm_client.start_instance(instance_hash),
-                                timeout=15.0  # 15 second timeout
-                            )
-                            if start_status != 200:
-                                error_msg = f"CRN returned status {start_status}: {start_result}"
-                                logger.warning(error_msg)
-                                last_error = error_msg
-                                # Try next CRN
-                                continue
-
-                        # Success!
-                        logger.info(f"Successfully started instance on CRN {selected['name']}")
-                        return {
-                            "status": "success",
-                            "instance_hash": instance_hash,
-                            "crn_url": crn_url,
-                        }
-
-                    except asyncio.TimeoutError:
-                        error_msg = f"CRN {selected['name']} timed out during start notification"
-                        logger.warning(error_msg)
-                        last_error = error_msg
-                        # Try next CRN
-                        continue
+                except asyncio.TimeoutError:
+                    error_msg = f"CRN {selected['name']} timed out during start notification (30s)"
+                    logger.warning(error_msg)
+                    last_error = error_msg
+                    self._blacklist_crn(crn_url, "timeout during start_instance")
+                    continue
 
             except Exception as e:
                 error_msg = f"CRN {selected['name']} failed: {str(e)}"
                 logger.warning(error_msg)
                 last_error = error_msg
-                # Try next CRN
+                self._blacklist_crn(crn_url, str(e))
                 continue
 
-        # All CRNs failed
+        # All CRNs failed — if we created an instance but couldn't start it,
+        # still return the hash so /repair can retry later
+        if instance_hash:
+            logger.warning(
+                f"All {max_crn_attempts} CRN start attempts failed, but instance "
+                f"{instance_hash} exists. User can /repair."
+            )
+            return {
+                "status": "error",
+                "error": f"All {max_crn_attempts} CRN attempts failed. Last: {last_error}",
+                "instance_hash": instance_hash,
+            }
+
         return {
             "status": "error",
-            "error": f"All {max_crn_attempts} CRN attempts failed. Last error: {last_error}"
+            "error": f"All {max_crn_attempts} CRN attempts failed. Last: {last_error}",
         }
 
     # ── Allocation polling ─────────────────────────────────────────────
@@ -275,7 +338,12 @@ class AlephDeployer:
                 logger.info(f"Re-sending CRN start notification (attempt {attempt + 1})")
                 try:
                     async with VmClient(self._account, crn_url) as vm_client:
-                        await vm_client.start_instance(instance_hash)
+                        await asyncio.wait_for(
+                            vm_client.start_instance(instance_hash),
+                            timeout=30.0,
+                        )
+                except asyncio.TimeoutError:
+                    logger.warning(f"Re-notify timed out (30s) for {instance_hash}")
                 except Exception as e:
                     logger.debug(f"Re-notify failed: {e}")
 

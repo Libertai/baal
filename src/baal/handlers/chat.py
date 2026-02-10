@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import html
 import logging
 
 from telegram import Update
-from telegram.constants import ChatAction
+from telegram.constants import ChatAction, ParseMode
 from telegram.ext import ContextTypes
 
 from baal.database.db import Database
@@ -18,15 +19,22 @@ logger = logging.getLogger(__name__)
 TELEGRAM_MAX_MESSAGE_LENGTH = 4096
 
 
-def _escape_markdown(text: str) -> str:
-    """Escape markdown special characters to prevent parsing errors."""
-    return text.replace('\\', '\\\\').replace('`', '\\`').replace('*', '\\*').replace('_', '\\_').replace('[', '\\[').replace(']', '\\]')
+async def _split_and_send(
+    update: Update,
+    text: str,
+    parse_mode: str | None = None,
+) -> None:
+    """Send a message, splitting into chunks if it exceeds Telegram's limit.
 
-
-async def _split_and_send(update: Update, text: str) -> None:
-    """Send a message with markdown, splitting into chunks if it exceeds Telegram's limit."""
+    Args:
+        update: Telegram update to reply to.
+        text: Message text.
+        parse_mode: Optional parse mode. Use None for dynamic/untrusted content
+            (agent responses, error details). Use ParseMode.HTML or "Markdown"
+            only for bot-controlled UI strings.
+    """
     if len(text) <= TELEGRAM_MAX_MESSAGE_LENGTH:
-        await update.message.reply_text(text, parse_mode="Markdown")
+        await update.message.reply_text(text, parse_mode=parse_mode)
         return
 
     chunks: list[str] = []
@@ -43,7 +51,7 @@ async def _split_and_send(update: Update, text: str) -> None:
         text = text[split_at:].lstrip()
 
     for chunk in chunks:
-        await update.message.reply_text(chunk, parse_mode="Markdown")
+        await update.message.reply_text(chunk, parse_mode=parse_mode)
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -142,15 +150,22 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             event_type = event.get("type")
 
             if event_type == "text":
-                # Escape markdown in agent response to prevent parsing errors
-                safe_content = _escape_markdown(event['content'])
-                await _split_and_send(update, f"*{agent_name}*: {safe_content}")
+                # Agent content is arbitrary LLM output — send as plain text
+                # to avoid Telegram Markdown/HTML parsing errors.
+                # Use HTML only for the bold agent-name prefix.
+                safe_name = html.escape(agent_name)
+                safe_content = html.escape(event["content"])
+                await _split_and_send(
+                    update,
+                    f"<b>{safe_name}</b>: {safe_content}",
+                    parse_mode=ParseMode.HTML,
+                )
                 # Keep typing indicator alive for next iteration
                 await update.message.chat.send_action(ChatAction.TYPING)
 
             elif event_type == "error":
-                safe_error = _escape_markdown(event.get('content', 'Something went wrong'))
-                await _split_and_send(update, f"\u26a0\ufe0f {safe_error}")
+                error_text = event.get("content", "Something went wrong")
+                await _split_and_send(update, f"Warning: {error_text}")
 
             elif event_type == "tool_use" and show_tools:
                 await update.message.reply_text(f"\u2699\ufe0f {event['name']}")
@@ -163,8 +178,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         try:
             pending = await get_pending_messages(agent["vm_url"], auth_token)
             for msg in pending:
-                safe_content = _escape_markdown(msg['content'])
-                await _split_and_send(update, f"*{agent_name}*: {safe_content}")
+                safe_name = html.escape(agent_name)
+                safe_content = html.escape(msg["content"])
+                await _split_and_send(
+                    update,
+                    f"<b>{safe_name}</b>: {safe_content}",
+                    parse_mode=ParseMode.HTML,
+                )
         except Exception:
             pass  # Non-critical
 
@@ -196,7 +216,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         context.user_data[f"agent_{agent_id}_interactions"] = interaction_count + 1
 
     except Exception as e:
-        logger.error(f"Proxy error for agent {agent_id}: {e}")
+        logger.error(f"Proxy error for agent {agent_id}: {type(e).__name__}: {e}", exc_info=True)
         await update.message.reply_text(
-            "Sorry, couldn't reach the agent right now. Please try again in a moment."
+            "Sorry, something went wrong while talking to the agent. Please try again in a moment."
         )

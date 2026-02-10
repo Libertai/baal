@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import html as html_mod
 import logging
 import secrets
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.constants import ParseMode
 from telegram.ext import (
     CallbackQueryHandler,
     CommandHandler,
@@ -84,11 +86,12 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             return
 
         context.user_data["current_agent_id"] = agent_id
+        safe_name = html_mod.escape(agent["name"])
         await update.message.reply_text(
-            f"You're now chatting with **{agent['name']}**.\n"
+            f"You're now chatting with <b>{safe_name}</b>.\n"
             f"Just type a message to talk.\n"
             f"Use /manage to return to the main menu.",
-            parse_mode="Markdown",
+            parse_mode=ParseMode.HTML,
         )
         return
 
@@ -196,18 +199,19 @@ async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         return
 
     # Send header
-    header = f"📋 *Your Agents* ({count}/{max_agents} slots used)"
-    await update.message.reply_text(header, parse_mode="Markdown")
+    header = f"<b>Your Agents</b> ({count}/{max_agents} slots used)"
+    await update.message.reply_text(header, parse_mode=ParseMode.HTML)
 
     # Send card for each agent
     for a in agents:
         status_emoji = STATUS_EMOJIS.get(a["deployment_status"], "❓")
         status_text = a["deployment_status"].title()
         age_str = format_age(a["created_at"])
+        safe_name = html_mod.escape(a["name"])
 
         card_text = (
-            f"{status_emoji} *{a['name']}*\n"
-            f"`{a['model']}` • {status_text} • {age_str}"
+            f"{status_emoji} <b>{safe_name}</b>\n"
+            f"<code>{html_mod.escape(a['model'])}</code> - {status_text} - {age_str}"
         )
 
         # Build action buttons based on status
@@ -234,7 +238,7 @@ async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
         await update.message.reply_text(
             card_text,
-            parse_mode="Markdown",
+            parse_mode=ParseMode.HTML,
             reply_markup=InlineKeyboardMarkup(buttons),
         )
 
@@ -336,20 +340,22 @@ async def delete_agent_callback(update: Update, context: ContextTypes.DEFAULT_TY
             ],
         ]
 
+        safe_name = html_mod.escape(agent["name"])
+        safe_model = html_mod.escape(agent["model"])
+        safe_status = html_mod.escape(agent["deployment_status"])
+
         await query.edit_message_text(
-            f"⚠️ *Delete Agent?*\n\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-            f"Agent: {agent['name']}\n"
-            f"Model: `{agent['model']}`\n"
-            f"Status: {agent['deployment_status']}\n\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"<b>Delete Agent?</b>\n\n"
+            f"Agent: {safe_name}\n"
+            f"Model: <code>{safe_model}</code>\n"
+            f"Status: {safe_status}\n\n"
             f"This will:\n"
-            f"• Stop the agent permanently\n"
-            f"• Destroy the VM instance\n"
-            f"• Delete all conversation history\n"
-            f"• Free up 1 agent slot\n\n"
-            f"*This action cannot be undone.*",
-            parse_mode="Markdown",
+            f"  - Stop the agent permanently\n"
+            f"  - Destroy the VM instance\n"
+            f"  - Delete all conversation history\n"
+            f"  - Free up 1 agent slot\n\n"
+            f"<b>This action cannot be undone.</b>",
+            parse_mode=ParseMode.HTML,
             reply_markup=InlineKeyboardMarkup(keyboard),
         )
 
@@ -394,14 +400,53 @@ async def repair_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     await update.message.reply_text(f"Repairing agent \"{agent['name']}\"...\nChecking VM allocation...")
 
-    # Get CRN URL from database or try to find it
+    instance_hash = agent["instance_hash"]
     crn_url = agent.get("crn_url")
+
+    # If no CRN URL stored (e.g., instance created but all CRN starts failed),
+    # try to start the instance on a fresh CRN
     if not crn_url:
-        await update.message.reply_text("No CRN URL found. Cannot repair.")
-        return
+        await update.message.reply_text("No CRN assigned. Trying to find one...")
+        crns = await deployer.get_available_crns()
+        if not crns:
+            await update.message.reply_text("No CRNs available. Try again later.")
+            return
+
+        # Try up to 3 CRNs
+        started = False
+        for candidate in crns[:3]:
+            candidate_url = candidate["url"]
+            if not candidate_url.startswith("http"):
+                candidate_url = f"https://{candidate_url}"
+            candidate_url = candidate_url.rstrip("/")
+
+            try:
+                from aleph.sdk.client.vm_client import VmClient
+                import asyncio
+
+                async with VmClient(deployer._account, candidate_url) as vm_client:
+                    status_code, _ = await asyncio.wait_for(
+                        vm_client.start_instance(instance_hash),
+                        timeout=30.0,
+                    )
+                    if status_code == 200:
+                        crn_url = candidate_url
+                        await db.update_agent_deployment(agent_id, crn_url=crn_url)
+                        await update.message.reply_text(f"Instance started on CRN {candidate['name']}")
+                        started = True
+                        break
+            except Exception as e:
+                logger.warning(f"CRN {candidate['name']} failed during repair: {e}")
+                continue
+
+        if not started:
+            await update.message.reply_text(
+                "Could not start instance on any CRN.\n"
+                "Try /repair again later, or /delete and recreate the agent."
+            )
+            return
 
     # Check allocation
-    instance_hash = agent["instance_hash"]
     alloc = await deployer.wait_for_allocation(instance_hash, crn_url, retries=3, delay=5)
 
     if not alloc:
@@ -499,11 +544,12 @@ async def create_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         return NAME
 
     context.user_data["create_name"] = name
+    safe_name = html_mod.escape(name)
     await update.message.reply_text(
-        f"Agent name: **{name}**\n\n"
-        "**Step 2/3:** What system prompt should your agent use?\n"
+        f"Agent name: <b>{safe_name}</b>\n\n"
+        "<b>Step 2/3:</b> What system prompt should your agent use?\n"
         "This tells the AI how to behave.",
-        parse_mode="Markdown",
+        parse_mode=ParseMode.HTML,
     )
     return PROMPT
 
@@ -581,23 +627,22 @@ async def create_model_callback(
     # Truncate prompt for display (show more than before)
     prompt_display = prompt if len(prompt) <= 800 else prompt[:797] + "..."
 
+    safe_name = html_mod.escape(name)
+    safe_model = html_mod.escape(model_name)
+    safe_prompt = html_mod.escape(prompt_display)
+
     await query.edit_message_text(
-        f"✅ *Review Your Agent*\n\n"
-        f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"Configuration:\n"
-        f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-        f"📝 *Name:* {name}\n"
-        f"🤖 *Model:* {model_name}\n\n"
-        f"💬 *System Prompt:*\n```\n{prompt_display}\n```\n\n"
-        f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"Deployment Details:\n"
-        f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-        f"• Platform: Aleph Cloud\n"
-        f"• Payment: PAYG (credit-based)\n"
-        f"• Setup time: ~3-5 minutes\n"
-        f"• HTTPS: Auto-configured\n\n"
+        f"<b>Review Your Agent</b>\n\n"
+        f"<b>Name:</b> {safe_name}\n"
+        f"<b>Model:</b> {safe_model}\n\n"
+        f"<b>System Prompt:</b>\n<code>{safe_prompt}</code>\n\n"
+        f"<b>Deployment Details:</b>\n"
+        f"  - Platform: Aleph Cloud\n"
+        f"  - Payment: PAYG (credit-based)\n"
+        f"  - Setup time: ~3-5 minutes\n"
+        f"  - HTTPS: Auto-configured\n\n"
         f"Ready to deploy?",
-        parse_mode="Markdown",
+        parse_mode=ParseMode.HTML,
         reply_markup=InlineKeyboardMarkup(keyboard),
     )
     return CONFIRM
@@ -725,12 +770,16 @@ async def _deploy_agent_background(
     agent_secret: str,
 ) -> None:
     """Run the full deployment flow in the background with live progress updates."""
+    import time as _time
+
     from .deployment_progress import DeploymentProgress
     from .error_handlers import send_deployment_error
 
     db: Database = application.bot_data["db"]
     deployer: AlephDeployer = application.bot_data["deployer"]
     bot = application.bot
+
+    deploy_start = _time.monotonic()
 
     # Initialize progress tracker
     progress = DeploymentProgress(bot, chat_id, name)
@@ -743,11 +792,31 @@ async def _deploy_agent_background(
 
         result = await deployer.create_instance(name)
         if result["status"] != "success":
+            # Even on failure, save the instance_hash if one was created
+            # (allows /repair to retry CRN start later)
+            partial_hash = result.get("instance_hash")
+            if partial_hash:
+                await db.update_agent_deployment(
+                    agent_id,
+                    instance_hash=partial_hash,
+                    deployment_status="failed",
+                )
+                logger.info(
+                    f"Instance {partial_hash} created but CRN start failed; "
+                    f"saved for /repair"
+                )
+            else:
+                await db.update_agent_deployment(agent_id, deployment_status="failed")
+
             await progress.update("instance", "failed")
-            await db.update_agent_deployment(agent_id, deployment_status="failed")
             await send_deployment_error(
                 bot, chat_id, agent_id, "instance_creation",
                 result.get("error", "Unknown error")
+            )
+            duration = int(_time.monotonic() - deploy_start)
+            await db.log_deployment_event(
+                agent_id, "failed", "instance_creation",
+                result.get("error"), duration,
             )
             return
 
@@ -773,6 +842,11 @@ async def _deploy_agent_background(
             await send_deployment_error(
                 bot, chat_id, agent_id, "allocation_timeout",
                 f"VM allocation timed out for {instance_hash}"
+            )
+            duration = int(_time.monotonic() - deploy_start)
+            await db.log_deployment_event(
+                agent_id, "failed", "allocation_timeout",
+                f"VM not allocated after polling", duration,
             )
             return
 
@@ -800,6 +874,11 @@ async def _deploy_agent_background(
                 bot, chat_id, agent_id, "ssh_deployment",
                 deploy_result.get("error", "SSH deployment failed")
             )
+            duration = int(_time.monotonic() - deploy_start)
+            await db.log_deployment_event(
+                agent_id, "failed", "ssh_deployment",
+                deploy_result.get("error"), duration,
+            )
             return
 
         vm_url = deploy_result["vm_url"]
@@ -825,6 +904,11 @@ async def _deploy_agent_background(
         # Complete!
         await progress.complete()
 
+        # Log successful deployment
+        duration = int(_time.monotonic() - deploy_start)
+        await db.log_deployment_event(agent_id, "success", duration_seconds=duration)
+        logger.info(f"Deployment of agent {agent_id} completed in {duration}s")
+
         # Send deep link message
         bot_username = (await bot.get_me()).username
         deep_link = f"https://t.me/{bot_username}?start=agent_{agent_id}"
@@ -842,6 +926,10 @@ async def _deploy_agent_background(
         await db.update_agent_deployment(agent_id, deployment_status="failed")
         await send_deployment_error(
             bot, chat_id, agent_id, "unexpected_error", str(e)
+        )
+        duration = int(_time.monotonic() - deploy_start)
+        await db.log_deployment_event(
+            agent_id, "failed", "unexpected_error", str(e), duration,
         )
 
 
@@ -886,15 +974,14 @@ async def dashboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
     max_agents = getattr(settings, "max_agents_per_user", 3)
 
-    # Build overview
+    # Build overview (use HTML since agent names are user-provided)
     message = (
-        f"📊 *Agent Dashboard*\n\n"
+        f"<b>Agent Dashboard</b>\n\n"
         f"Last updated: just now\n\n"
-        + format_section("Overview",
-            f"Agents: {len(agents)} / {max_agents} slots\n"
-            f"🟢 Healthy: {healthy}\n"
-            f"🔴 Down: {down}"
-        )
+        f"<b>Overview</b>\n"
+        f"Agents: {len(agents)} / {max_agents} slots\n"
+        f"Healthy: {healthy}\n"
+        f"Down: {down}"
     )
 
     if agents:
@@ -902,14 +989,15 @@ async def dashboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         for agent in agents:
             is_healthy = health_statuses.get(agent["id"], False)
             status_emoji = "🟢" if is_healthy else STATUS_EMOJIS.get(agent["deployment_status"], "❓")
+            safe_name = html_mod.escape(agent["name"])
 
             agent_lines.append(
-                f"\n{status_emoji} *{agent['name']}*\n"
-                f"   • Status: {agent['deployment_status'].title()}\n"
-                f"   • Created: {format_age(agent['created_at'])}"
+                f"\n{status_emoji} <b>{safe_name}</b>\n"
+                f"   - Status: {agent['deployment_status'].title()}\n"
+                f"   - Created: {format_age(agent['created_at'])}"
             )
 
-        message += "\n" + format_section("Agent Health", "".join(agent_lines))
+        message += "\n\n<b>Agent Health</b>" + "".join(agent_lines)
 
     # System status
     system_info = ""
@@ -917,21 +1005,21 @@ async def dashboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         usage = await db.get_daily_usage(user_id)
         system_info += f"Free tier: {usage['message_count']} / 50 messages\n"
     else:
-        system_info += f"Connected account ✅\n"
-    system_info += f"Aleph Cloud: Operational ✅"
+        system_info += f"Connected account\n"
+    system_info += f"Aleph Cloud: Operational"
 
-    message += "\n" + format_section("System", system_info)
+    message += f"\n\n<b>System</b>\n{system_info}"
 
     keyboard = [
         [
-            InlineKeyboardButton("🔄 Refresh", callback_data="dashboard_refresh"),
-            InlineKeyboardButton("📋 My Agents", callback_data="quick_list"),
+            InlineKeyboardButton("Refresh", callback_data="dashboard_refresh"),
+            InlineKeyboardButton("My Agents", callback_data="quick_list"),
         ],
     ]
 
     await update.message.reply_text(
         message,
-        parse_mode="Markdown",
+        parse_mode=ParseMode.HTML,
         reply_markup=InlineKeyboardMarkup(keyboard),
     )
 

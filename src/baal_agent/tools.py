@@ -296,8 +296,12 @@ async def _exec_read_file(args: dict) -> str:
 
 
 async def _exec_write_file(args: dict) -> str:
-    path = args["path"]
-    content = args["content"]
+    path = args.get("path")
+    content = args.get("content")
+    if not path:
+        return "[error: missing required 'path' parameter]"
+    if content is None:
+        return "[error: missing required 'content' parameter]"
     try:
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         with open(path, "w") as f:
@@ -308,9 +312,15 @@ async def _exec_write_file(args: dict) -> str:
 
 
 async def _exec_edit_file(args: dict) -> str:
-    path = args["path"]
-    old_string = args["old_string"]
-    new_string = args["new_string"]
+    path = args.get("path")
+    old_string = args.get("old_string")
+    new_string = args.get("new_string")
+    if not path:
+        return "[error: missing required 'path' parameter]"
+    if old_string is None:
+        return "[error: missing required 'old_string' parameter]"
+    if new_string is None:
+        return "[error: missing required 'new_string' parameter]"
     try:
         with open(path, "r") as f:
             content = f.read()

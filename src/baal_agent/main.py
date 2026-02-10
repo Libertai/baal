@@ -263,8 +263,49 @@ async def _heartbeat_loop():
 
 # ── SSE helpers ───────────────────────────────────────────────────────
 
+# Timeout for a single inference call (LibertAI API).  Long enough for
+# complex tool-calling prompts, but prevents infinite hangs.
+_INFERENCE_TIMEOUT = 120  # seconds
+
+# Interval for SSE keepalive comments during long-running operations.
+# SSE comments (lines starting with ":") are ignored by parsers but
+# keep the TCP connection alive and prevent proxy read timeouts.
+_KEEPALIVE_INTERVAL = 30  # seconds
+
+
 def _sse_event(data: dict) -> str:
     return f"data: {json.dumps(data)}\n\n"
+
+
+def _sse_keepalive() -> str:
+    """SSE comment to keep the connection alive."""
+    return ": keepalive\n\n"
+
+
+async def _with_keepalive(coro, queue: asyncio.Queue):
+    """Run a coroutine while periodically pushing keepalive signals to a queue.
+
+    The queue is used to interleave keepalive comments with SSE data events
+    in the event_stream generator.  When the coroutine completes, the result
+    is placed on the queue as a ("result", value) tuple.  Exceptions are
+    placed as ("error", exc).
+    """
+    task = asyncio.create_task(coro)
+    while not task.done():
+        try:
+            await asyncio.wait_for(asyncio.shield(task), timeout=_KEEPALIVE_INTERVAL)
+        except asyncio.TimeoutError:
+            # Task still running — send keepalive
+            await queue.put(("keepalive", None))
+        except Exception:
+            # Task raised — will be handled below
+            break
+
+    try:
+        result = task.result()
+        await queue.put(("result", result))
+    except Exception as e:
+        await queue.put(("error", e))
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────
@@ -296,9 +337,25 @@ async def chat(req: ChatRequest):
             messages.extend(history)
 
             for _iteration in range(settings.max_tool_iterations):
-                assistant_msg = await inference.chat(
-                    messages=messages, model=settings.model, tools=tools
-                )
+                # Call inference with a timeout to prevent indefinite hangs
+                # when the LibertAI API is slow or unresponsive.
+                try:
+                    assistant_msg = await asyncio.wait_for(
+                        inference.chat(
+                            messages=messages, model=settings.model, tools=tools
+                        ),
+                        timeout=_INFERENCE_TIMEOUT,
+                    )
+                except asyncio.TimeoutError:
+                    logger.error(
+                        f"Inference timed out after {_INFERENCE_TIMEOUT}s"
+                    )
+                    yield _sse_event({
+                        "type": "error",
+                        "content": "The AI model took too long to respond. Please try again.",
+                    })
+                    yield _sse_event({"type": "done"})
+                    return
 
                 text_content = assistant_msg.content
                 tool_calls = assistant_msg.tool_calls
@@ -340,11 +397,39 @@ async def chat(req: ChatRequest):
                     arguments = tc.function.arguments
                     yield _sse_event({"type": "tool_use", "name": name, "input": arguments})
 
-                    # Handle spawn tool specially
+                    # Execute tool with keepalive to prevent proxy timeouts
+                    # during long-running operations (e.g., bash commands).
+                    keepalive_q: asyncio.Queue = asyncio.Queue()
                     if name == "spawn":
-                        result = await _handle_spawn(arguments, req.chat_id)
+                        coro = _handle_spawn(arguments, req.chat_id)
                     else:
-                        result = await execute_tool(name, arguments)
+                        coro = execute_tool(name, arguments)
+
+                    keepalive_task = asyncio.create_task(
+                        _with_keepalive(coro, keepalive_q)
+                    )
+
+                    result = None
+                    tool_error = None
+                    while True:
+                        msg_type, msg_val = await keepalive_q.get()
+                        if msg_type == "keepalive":
+                            yield _sse_keepalive()
+                        elif msg_type == "result":
+                            result = msg_val
+                            break
+                        elif msg_type == "error":
+                            tool_error = msg_val
+                            break
+
+                    # Ensure the keepalive task is fully done
+                    await keepalive_task
+
+                    if tool_error is not None:
+                        logger.error(
+                            f"Tool {name} raised: {tool_error}", exc_info=tool_error
+                        )
+                        result = f"Error executing {name}: {tool_error}"
 
                     await db.add_message(
                         req.chat_id, "tool", result, tool_call_id=tc.id
@@ -358,10 +443,18 @@ async def chat(req: ChatRequest):
             yield _sse_event({"type": "text", "content": "(Reached maximum tool iterations)"})
             yield _sse_event({"type": "done"})
 
+        except asyncio.CancelledError:
+            # Client disconnected — log but don't try to yield (stream is dead)
+            logger.info(f"Client disconnected during chat stream for {req.chat_id}")
+            return
         except Exception as e:
             logger.error(f"Chat stream error: {e}", exc_info=True)
-            yield _sse_event({"type": "error", "content": str(e)})
-            yield _sse_event({"type": "done"})
+            try:
+                yield _sse_event({"type": "error", "content": str(e)})
+                yield _sse_event({"type": "done"})
+            except Exception:
+                # If we can't even yield the error (broken pipe), just bail
+                logger.warning("Failed to send error event to client")
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 

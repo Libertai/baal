@@ -1,7 +1,11 @@
 # src/baal/handlers/deployment_progress.py
 
+import html as html_mod
 import logging
+
 from telegram import Bot
+from telegram.constants import ParseMode
+from telegram.error import BadRequest
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +34,7 @@ class DeploymentProgress:
         msg = await self.bot.send_message(
             chat_id=self.chat_id,
             text=self._render(),
-            parse_mode="Markdown"
+            parse_mode=ParseMode.HTML,
         )
         self.message_id = msg.message_id
 
@@ -56,8 +60,15 @@ class DeploymentProgress:
                 chat_id=self.chat_id,
                 message_id=self.message_id,
                 text=self._render(),
-                parse_mode="Markdown"
+                parse_mode=ParseMode.HTML,
             )
+        except BadRequest as e:
+            # "Message is not modified" happens when text hasn't changed
+            # (e.g., calling update() twice with same step/status) -- ignore it
+            if "message is not modified" in str(e).lower():
+                logger.debug(f"Progress message unchanged, skipping edit")
+            else:
+                logger.warning(f"Failed to update progress: {e}")
         except Exception as e:
             logger.warning(f"Failed to update progress: {e}")
 
@@ -69,33 +80,39 @@ class DeploymentProgress:
                 chat_id=self.chat_id,
                 message_id=self.message_id,
                 text=self._render_complete(),
-                parse_mode="Markdown"
+                parse_mode=ParseMode.HTML,
             )
+        except BadRequest as e:
+            if "message is not modified" in str(e).lower():
+                logger.debug(f"Progress message unchanged, skipping edit")
+            else:
+                logger.warning(f"Failed to mark complete: {e}")
         except Exception as e:
             logger.warning(f"Failed to mark complete: {e}")
 
     def _render(self) -> str:
-        """Render current progress state."""
+        """Render current progress state (HTML format)."""
+        safe_name = html_mod.escape(self.agent_name)
         progress = int((self.current_step / len(self.STEPS)) * 100)
         bar_length = 16
         filled = int((progress / 100) * bar_length)
         bar = "█" * filled + "░" * (bar_length - filled)
 
         lines = [
-            f"🚀 *Deploying Agent:* {self.agent_name}\n",
+            f"<b>Deploying Agent:</b> {safe_name}\n",
             f"Progress: {bar} {progress}%\n",
         ]
 
         for i, (key, label) in enumerate(self.STEPS):
             if i < self.current_step:
-                lines.append(f"✅ {label}")
+                lines.append(f"  {label}")
             elif i == self.current_step:
                 if self.failed:
-                    lines.append(f"❌ {label} (failed)")
+                    lines.append(f"  {label} (failed)")
                 else:
-                    lines.append(f"🔄 {label}...")
+                    lines.append(f"  {label}...")
             else:
-                lines.append(f"⏳ {label}")
+                lines.append(f"  {label}")
 
         if not self.failed:
             remaining = max(1, len(self.STEPS) - self.current_step)
@@ -104,9 +121,10 @@ class DeploymentProgress:
         return "\n".join(lines)
 
     def _render_complete(self) -> str:
-        """Render completion state."""
+        """Render completion state (HTML format)."""
+        safe_name = html_mod.escape(self.agent_name)
         return (
-            f"✅ *Deployment Complete!*\n\n"
-            f"Agent *{self.agent_name}* is now running.\n"
+            f"<b>Deployment Complete!</b>\n\n"
+            f"Agent <b>{safe_name}</b> is now running.\n"
             f"All systems operational."
         )
