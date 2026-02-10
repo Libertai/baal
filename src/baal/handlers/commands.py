@@ -257,8 +257,7 @@ async def repair_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     user = await db.get_user(user_id)
     libertai_api_key = user.get("api_key") if user else None
     if not libertai_api_key:
-        settings = _get_settings(context)
-        libertai_api_key = settings.libertai_api_key
+        libertai_api_key = context.bot_data["settings"].libertai_api_key
 
     # Retry deployment
     deploy_result = await deployer.deploy_agent(
