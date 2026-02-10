@@ -18,6 +18,11 @@ logger = logging.getLogger(__name__)
 TELEGRAM_MAX_MESSAGE_LENGTH = 4096
 
 
+def _escape_markdown(text: str) -> str:
+    """Escape markdown special characters to prevent parsing errors."""
+    return text.replace('\\', '\\\\').replace('`', '\\`').replace('*', '\\*').replace('_', '\\_').replace('[', '\\[').replace(']', '\\]')
+
+
 async def _split_and_send(update: Update, text: str) -> None:
     """Send a message with markdown, splitting into chunks if it exceeds Telegram's limit."""
     if len(text) <= TELEGRAM_MAX_MESSAGE_LENGTH:
@@ -137,14 +142,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             event_type = event.get("type")
 
             if event_type == "text":
-                await _split_and_send(update, f"*{agent_name}*: {event['content']}")
+                # Escape markdown in agent response to prevent parsing errors
+                safe_content = _escape_markdown(event['content'])
+                await _split_and_send(update, f"*{agent_name}*: {safe_content}")
                 # Keep typing indicator alive for next iteration
                 await update.message.chat.send_action(ChatAction.TYPING)
 
             elif event_type == "error":
-                await _split_and_send(
-                    update, f"\u26a0\ufe0f {event.get('content', 'Something went wrong')}"
-                )
+                safe_error = _escape_markdown(event.get('content', 'Something went wrong'))
+                await _split_and_send(update, f"\u26a0\ufe0f {safe_error}")
 
             elif event_type == "tool_use" and show_tools:
                 await update.message.reply_text(f"\u2699\ufe0f {event['name']}")
@@ -157,7 +163,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         try:
             pending = await get_pending_messages(agent["vm_url"], auth_token)
             for msg in pending:
-                await _split_and_send(update, f"*{agent_name}*: {msg['content']}")
+                safe_content = _escape_markdown(msg['content'])
+                await _split_and_send(update, f"*{agent_name}*: {safe_content}")
         except Exception:
             pass  # Non-critical
 
