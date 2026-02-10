@@ -219,6 +219,7 @@ async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         if a["deployment_status"] == "running":
             buttons.append([
                 InlineKeyboardButton("💬 Chat", callback_data=f"chat_agent:{a['id']}"),
+                InlineKeyboardButton("🔄 Update", callback_data=f"update_agent:{a['id']}"),
                 InlineKeyboardButton("🗑️ Delete", callback_data=f"delete_confirm:{a['id']}"),
             ])
         elif a["deployment_status"] == "deploying":
