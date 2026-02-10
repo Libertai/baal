@@ -413,17 +413,20 @@ class AlephDeployer:
         """
         steps: list[dict] = []
 
-        # Wait for SSH to be ready (VMs can take 2-3 min to fully boot)
+        # Wait for SSH to be ready (VMs can take 3-5 min to fully boot)
         logger.info(f"Waiting for SSH to be ready at {vm_ip}:{ssh_port}...")
-        for attempt in range(18):  # 18 attempts × 10s = 3 minutes max
-            code, out, _ = await self._ssh_run(vm_ip, ssh_port, "echo ready", timeout=15)
+        for attempt in range(30):  # 30 attempts × 10s = 5 minutes max
+            code, out, err = await self._ssh_run(vm_ip, ssh_port, "echo ready", timeout=15)
             if code == 0 and "ready" in out:
                 logger.info(f"SSH ready after {(attempt+1)*10}s")
                 break
-            if attempt < 17:  # Don't sleep on last attempt
+            # Log progress every 5 attempts (~50 seconds)
+            if attempt > 0 and attempt % 5 == 0:
+                logger.info(f"Still waiting for SSH... ({attempt+1}/30 attempts, {(attempt+1)*10}s elapsed)")
+            if attempt < 29:  # Don't sleep on last attempt
                 await asyncio.sleep(10)
         else:
-            return {"status": "error", "error": "SSH not reachable after 3 minutes", "steps": steps}
+            return {"status": "error", "error": f"SSH not reachable after 5 minutes (tried {vm_ip}:{ssh_port})", "steps": steps}
 
         steps.append({"step": "ssh_connected", "success": True})
 

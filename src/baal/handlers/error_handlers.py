@@ -72,7 +72,9 @@ async def send_deployment_error(
     )
 
     if details:
-        message += f"`{details[:200]}`\n\n"
+        # Escape markdown special characters in error details
+        safe_details = details[:200].replace('\\', '\\\\').replace('`', '\\`').replace('*', '\\*').replace('_', '\\_')
+        message += f"`{safe_details}`\n\n"
 
     message += (
         f"Possible causes:\n"
