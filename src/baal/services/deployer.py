@@ -29,7 +29,7 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 ROOTFS_IMAGES = {
-    "debian12": "6e30de68c6cedfa6b45240c2b51e52495ac6fb1888c60c6e6c7b5ee3d3a8c47e",
+    "debian12": "5330dcefe1857bcd97b7b7f24d1420a7d46232d53f27be280c8a7071d88bd84e",
 }
 
 GATEWAY_API_URL = "https://api.2n6.me"
@@ -73,7 +73,8 @@ class AlephDeployer:
                     logger.warning(f"CRN list returned {resp.status_code}")
                     return []
 
-                nodes = resp.json()
+                data = resp.json()
+                nodes = data.get("crns", []) if isinstance(data, dict) else []
                 crns = []
                 for node in nodes:
                     # Require both IPv6 checks passing
@@ -144,10 +145,13 @@ class AlephDeployer:
             crn_url = f"https://{crn_url}"
         crn_url = crn_url.rstrip("/")
 
+        payment_receiver = selected["payment_address"]
+        logger.info(f"Selected CRN: {selected['name']} at {crn_url}, receiver: {payment_receiver}")
+
         payment = Payment(
             chain=Chain.ETH,
             type=PaymentType.credit,
-            receiver=selected["payment_address"],
+            receiver=payment_receiver,
         )
 
         try:
@@ -169,10 +173,34 @@ class AlephDeployer:
                 )
 
                 instance_hash = str(message.item_hash)
-                logger.info(f"Instance created: {instance_hash}")
+                logger.info(f"Instance created: {instance_hash}, status: {status}")
+
+                # Wait and verify message exists on network before notifying
+                max_verify_attempts = 6
+                message_found = False
+                for attempt in range(max_verify_attempts):
+                    await asyncio.sleep(5)
+                    try:
+                        async with httpx.AsyncClient(timeout=10.0) as verify_client:
+                            resp = await verify_client.get(
+                                f"https://api2.aleph.im/api/v0/messages.json?hashes={instance_hash}"
+                            )
+                            if resp.status_code == 200:
+                                data = resp.json()
+                                if data.get("messages") and len(data["messages"]) > 0:
+                                    message_found = True
+                                    logger.info(f"Message verified on network after {(attempt+1)*5}s")
+                                    break
+                    except Exception:
+                        pass
+
+                if not message_found:
+                    logger.warning(f"Message not found on network after {max_verify_attempts*5}s")
+
+                # Additional wait for CRN propagation
+                await asyncio.sleep(5)
 
                 # Notify CRN to start
-                await asyncio.sleep(2)
                 async with VmClient(self._account, crn_url) as vm_client:
                     start_status, start_result = await vm_client.start_instance(
                         instance_hash
@@ -210,6 +238,16 @@ class AlephDeployer:
             logger.info(
                 f"Polling allocation for {instance_hash} (attempt {attempt + 1}/{retries})"
             )
+
+            # Re-notify CRN every 4th attempt (in case first notify was too early)
+            if attempt > 0 and attempt % 4 == 0:
+                logger.info(f"Re-sending CRN start notification (attempt {attempt + 1})")
+                try:
+                    async with VmClient(self._account, crn_url) as vm_client:
+                        await vm_client.start_instance(instance_hash)
+                except Exception as e:
+                    logger.debug(f"Re-notify failed: {e}")
+
             result = await self._check_allocation(instance_hash, crn_url)
             if result:
                 return result
@@ -344,14 +382,17 @@ class AlephDeployer:
         """
         steps: list[dict] = []
 
-        # Wait for SSH to be ready
-        for attempt in range(6):
+        # Wait for SSH to be ready (VMs can take 2-3 min to fully boot)
+        logger.info(f"Waiting for SSH to be ready at {vm_ip}:{ssh_port}...")
+        for attempt in range(18):  # 18 attempts × 10s = 3 minutes max
             code, out, _ = await self._ssh_run(vm_ip, ssh_port, "echo ready", timeout=15)
             if code == 0 and "ready" in out:
+                logger.info(f"SSH ready after {(attempt+1)*10}s")
                 break
-            await asyncio.sleep(10)
+            if attempt < 17:  # Don't sleep on last attempt
+                await asyncio.sleep(10)
         else:
-            return {"status": "error", "error": "SSH not reachable", "steps": steps}
+            return {"status": "error", "error": "SSH not reachable after 3 minutes", "steps": steps}
 
         steps.append({"step": "ssh_connected", "success": True})
 
