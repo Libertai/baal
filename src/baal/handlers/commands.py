@@ -61,7 +61,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             await update.message.reply_text("This agent doesn't exist or has been removed.")
             return
 
-        if agent["deployment_status"] != "running":
+        if agent["deployment_status"] not in ("deployed", "running"):
             await update.message.reply_text(
                 f"Agent \"{agent['name']}\" is not ready yet (status: {agent['deployment_status']})."
             )
@@ -280,7 +280,7 @@ async def repair_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     vm_url = deploy_result["vm_url"]
     await db.update_agent_deployment(
         agent_id,
-        deployment_status="deployed",
+        deployment_status="running",
         vm_ipv6=vm_ip,
         vm_url=vm_url,
     )
