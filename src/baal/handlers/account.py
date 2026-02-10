@@ -77,34 +77,100 @@ async def logout_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 
 async def account_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle /account."""
+    """Display rich account dashboard."""
+    from datetime import datetime, timezone, timedelta
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
     db: Database = context.bot_data["db"]
     settings = context.bot_data["settings"]
     encryption_key = settings.bot_encryption_key
     user_id = update.effective_user.id
 
     user = await db.ensure_user(user_id)
+    agents = await db.list_agents(user_id)
+
+    # Count agent statuses
+    status_counts = {"running": 0, "deploying": 0, "failed": 0, "stopped": 0}
+    for agent in agents:
+        status = agent["deployment_status"]
+        if status in status_counts:
+            status_counts[status] += 1
+
+    max_agents = getattr(settings, "max_agents_per_user", 3)
 
     if user["api_key"]:
+        # Connected account dashboard
         api_key = decrypt(user["api_key"], encryption_key)
         balance = await _validate_api_key(settings.libertai_api_base_url, api_key)
-        if balance is not None:
-            await update.message.reply_text(
-                f"Connected with API key.\n"
-                f"Balance: {balance} credits.\n\n"
-                f"Use /logout to disconnect."
-            )
-        else:
-            await update.message.reply_text(
-                "Connected with API key, but could not fetch balance.\n"
-                "Your key may have expired. Use /logout and /login to reconnect."
-            )
-    else:
-        usage = await db.get_daily_usage(user_id)
-        agents = await db.list_agents(user_id)
+
+        # Mask API key (show last 6 chars)
+        masked_key = f"****...{api_key[-6:]}" if len(api_key) > 6 else "****"
+
+        keyboard = [
+            [
+                InlineKeyboardButton("🚪 Logout", callback_data="account_logout"),
+                InlineKeyboardButton("📋 My Agents", callback_data="quick_list"),
+            ],
+            [
+                InlineKeyboardButton("🔄 Refresh", callback_data="account_refresh"),
+            ],
+        ]
+
+        balance_text = f"{balance:.2f} credits" if balance is not None else "Unable to fetch"
+
+        message = (
+            f"💳 *Account Dashboard*\n\n"
+            f"*Account Type*\n"
+            f"✨ Connected • Balance: {balance_text}\n"
+            f"API Key: `{masked_key}`\n\n"
+            f"*Your Agents*\n"
+            f"{len(agents)}/{max_agents} slots • "
+            f"🟢 {status_counts['running']} running • "
+            f"🟡 {status_counts['deploying']} deploying • "
+            f"🔴 {status_counts['failed']} failed"
+        )
+
         await update.message.reply_text(
-            f"Free tier account.\n"
-            f"Today's usage: {usage['message_count']} messages.\n"
-            f"Active agents: {len(agents)}\n\n"
-            f"Use /login <api_key> to connect your LibertAI account."
+            message,
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+        )
+    else:
+        # Free tier dashboard
+        usage = await db.get_daily_usage(user_id)
+        current = usage["message_count"]
+        limit = 50  # Default free tier limit
+
+        # Calculate reset time
+        now = datetime.now(timezone.utc)
+        tomorrow = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        delta = tomorrow - now
+        hours = int(delta.total_seconds() // 3600)
+        minutes = int((delta.total_seconds() % 3600) // 60)
+
+        keyboard = [
+            [
+                InlineKeyboardButton("🔑 Connect API Key", callback_data="account_login"),
+                InlineKeyboardButton("📋 My Agents", callback_data="quick_list"),
+            ],
+        ]
+
+        message = (
+            f"💳 *Account Dashboard*\n\n"
+            f"*Account Type*\n"
+            f"🆓 Free Tier • {current}/{limit} messages today\n"
+            f"Resets in {hours}h {minutes}m\n\n"
+            f"*Your Agents*\n"
+            f"{len(agents)}/{max_agents} slots • "
+            f"🟢 {status_counts['running']} running • "
+            f"🟡 {status_counts['deploying']} deploying • "
+            f"🔴 {status_counts['failed']} failed\n\n"
+            f"*Upgrade*\n"
+            f"Connect your LibertAI API key for unlimited messages"
+        )
+
+        await update.message.reply_text(
+            message,
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(keyboard),
         )

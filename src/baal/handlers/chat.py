@@ -19,9 +19,9 @@ TELEGRAM_MAX_MESSAGE_LENGTH = 4096
 
 
 async def _split_and_send(update: Update, text: str) -> None:
-    """Send a message, splitting into chunks if it exceeds Telegram's limit."""
+    """Send a message with markdown, splitting into chunks if it exceeds Telegram's limit."""
     if len(text) <= TELEGRAM_MAX_MESSAGE_LENGTH:
-        await update.message.reply_text(text)
+        await update.message.reply_text(text, parse_mode="Markdown")
         return
 
     chunks: list[str] = []
@@ -38,7 +38,7 @@ async def _split_and_send(update: Update, text: str) -> None:
         text = text[split_at:].lstrip()
 
     for chunk in chunks:
-        await update.message.reply_text(chunk)
+        await update.message.reply_text(chunk, parse_mode="Markdown")
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -70,9 +70,34 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if not is_connected:
         allowed, remaining = await rate_limiter.check_and_increment(telegram_id)
         if not allowed:
+            from datetime import datetime, timezone, timedelta
+            from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+            # Calculate time until midnight UTC
+            now = datetime.now(timezone.utc)
+            tomorrow = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+            delta = tomorrow - now
+            hours = int(delta.total_seconds() // 3600)
+            minutes = int((delta.total_seconds() % 3600) // 60)
+
+            usage = await db.get_daily_usage(telegram_id)
+            current = usage["message_count"]
+            limit = rate_limiter._daily_messages
+
+            keyboard = [
+                [
+                    InlineKeyboardButton("🔑 Connect API Key", callback_data="quick_login"),
+                    InlineKeyboardButton("💳 View Account", callback_data="quick_account"),
+                ],
+            ]
+
             await update.message.reply_text(
-                "You've reached your daily message limit.\n"
-                "Come back tomorrow, or connect your own API key with /login."
+                f"⚠️ *Daily Limit Reached*\n\n"
+                f"You've used {current}/{limit} free messages today.\n"
+                f"Resets in {hours}h {minutes}m (00:00 UTC)\n\n"
+                f"Connect your LibertAI API key for unlimited messages.",
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup(keyboard),
             )
             return
 
@@ -135,6 +160,26 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 await _split_and_send(update, f"*{agent_name}*: {msg['content']}")
         except Exception:
             pass  # Non-critical
+
+        # Add persistent navigation on first interaction
+        interaction_count = context.user_data.get(f"agent_{agent_id}_interactions", 0)
+        if interaction_count == 0:
+            from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+            nav_keyboard = InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton("🏠 Main Menu", callback_data="nav_main"),
+                    InlineKeyboardButton("📋 My Agents", callback_data="nav_list"),
+                    InlineKeyboardButton("⚙️ Account", callback_data="nav_account"),
+                ],
+            ])
+            # Just show the navigation buttons without extra text
+            await update.message.reply_text(
+                ".",  # Telegram requires some text, use minimal
+                reply_markup=nav_keyboard,
+            )
+
+        context.user_data[f"agent_{agent_id}_interactions"] = interaction_count + 1
 
     except Exception as e:
         logger.error(f"Proxy error for agent {agent_id}: {e}")

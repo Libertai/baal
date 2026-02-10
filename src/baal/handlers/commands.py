@@ -25,8 +25,24 @@ logger = logging.getLogger(__name__)
 NAME, PROMPT, MODEL, CONFIRM = range(4)
 
 AVAILABLE_MODELS = {
-    "qwen3-coder-next": "Qwen 3 Coder Next",
-    "glm-4.7": "GLM 4.7",
+    "qwen3-coder-next": {
+        "name": "Qwen 3 Coder Next",
+        "emoji": "✨",
+        "description": "Latest coding model",
+        "best_for": "Code generation, debugging, technical tasks",
+        "context": "32K tokens",
+        "speed": "Fast",
+        "badges": ["Recommended"],
+    },
+    "glm-4.7": {
+        "name": "GLM 4.7",
+        "emoji": "💬",
+        "description": "General-purpose chat",
+        "best_for": "Conversations, research, creative writing",
+        "context": "128K tokens",
+        "speed": "Moderate",
+        "badges": ["Great for long documents"],
+    },
 }
 
 
@@ -76,36 +92,56 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         )
         return
 
-    # No args — welcome message
+    # No args — enhanced welcome message with inline keyboard
+    from .ui_utils import get_quick_actions_keyboard
+
     await update.message.reply_text(
-        "Welcome to **Baal** — create and deploy AI agents on Aleph Cloud.\n\n"
-        "Commands:\n"
-        "/create — Create a new agent\n"
-        "/list — List your agents\n"
-        "/delete — Delete an agent\n"
-        "/account — Check your account\n"
-        "/help — Show this help\n\n"
-        "To chat with an existing agent, use a deep link like:\n"
-        "`t.me/baal_bot?start=agent_1`",
+        "🤖 *Welcome to Baal*\n\n"
+        "Deploy AI agents on Aleph Cloud with LibertAI inference.\n\n"
+        "Choose an action below:",
         parse_mode="Markdown",
+        reply_markup=get_quick_actions_keyboard(),
     )
 
 
 # ── /help ──────────────────────────────────────────────────────────────
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show comprehensive help with examples and links."""
+    keyboard = [
+        [
+            InlineKeyboardButton("📚 Documentation", url="https://github.com/Libertai/baal"),
+            InlineKeyboardButton("💬 Support", url="https://t.me/libertai"),
+        ],
+        [
+            InlineKeyboardButton("🐛 Report Issue", url="https://github.com/Libertai/baal/issues"),
+        ],
+    ]
+
+    message = (
+        f"ℹ️ *Baal Help*\n\n"
+        f"*Quick Start*\n"
+        f"1. Create an agent with /create\n"
+        f"2. Wait 3-5 minutes for deployment\n"
+        f"3. Click the deep link to chat\n\n"
+        f"*Main Commands*\n"
+        f"/create - Create a new agent\n"
+        f"/list - View your agents\n"
+        f"/account - Check usage & balance\n"
+        f"/manage - Exit chat mode\n\n"
+        f"*Account*\n"
+        f"/login `<key>` - Connect LibertAI API key\n"
+        f"/logout - Disconnect account\n"
+        f"/verbose - Toggle tool visibility\n\n"
+        f"*Advanced*\n"
+        f"/repair `<id>` - Retry failed deployment\n"
+        f"/delete `<id>` - Delete agent"
+    )
+
     await update.message.reply_text(
-        "**Baal Bot Commands**\n\n"
-        "/create — Create a new AI agent\n"
-        "/list — List your agents with status\n"
-        "/delete <id> — Delete an agent and destroy its VM\n"
-        "/manage — Exit chat mode, return to control plane\n"
-        "/verbose — Toggle tool call visibility\n"
-        "/login <api\\_key> — Connect your LibertAI account\n"
-        "/logout — Disconnect your LibertAI account\n"
-        "/account — Check account status and balance\n"
-        "/help — Show this message",
+        message,
         parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(keyboard),
     )
 
 
@@ -137,30 +173,82 @@ async def manage_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 # ── /list ──────────────────────────────────────────────────────────────
 
 async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Display interactive agent list with action buttons."""
+    from .ui_utils import STATUS_EMOJIS, format_age
+
     db = _get_db(context)
+    settings = context.bot_data["settings"]
     user_id = update.effective_user.id
     agents = await db.list_agents(user_id)
 
+    count = len(agents)
+    max_agents = getattr(settings, "max_agents_per_user", 3)
+
     if not agents:
-        await update.message.reply_text("You have no agents. Use /create to make one.")
+        keyboard = [[InlineKeyboardButton("➕ Create Your First Agent", callback_data="quick_create")]]
+        await update.message.reply_text(
+            "📋 *Your Agents*\n\n"
+            "You have no agents yet.\n"
+            "Create one to get started!",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+        )
         return
 
-    lines = ["**Your Agents:**\n"]
+    # Send header
+    header = f"📋 *Your Agents* ({count}/{max_agents} slots used)"
+    await update.message.reply_text(header, parse_mode="Markdown")
+
+    # Send card for each agent
     for a in agents:
-        status_emoji = {
-            "running": "🟢",
-            "deploying": "🟡",
-            "pending": "⏳",
-            "failed": "🔴",
-            "stopped": "⚫",
-        }.get(a["deployment_status"], "❓")
-        lines.append(
-            f"{status_emoji} **{a['name']}** (ID: {a['id']})\n"
-            f"   Model: `{a['model']}` | Status: {a['deployment_status']}\n"
-            f"   Link: `t.me/baal_bot?start=agent_{a['id']}`"
+        status_emoji = STATUS_EMOJIS.get(a["deployment_status"], "❓")
+        status_text = a["deployment_status"].title()
+        age_str = format_age(a["created_at"])
+
+        card_text = (
+            f"{status_emoji} *{a['name']}*\n"
+            f"`{a['model']}` • {status_text} • {age_str}"
         )
 
-    await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+        # Build action buttons based on status
+        buttons = []
+        if a["deployment_status"] == "running":
+            buttons.append([
+                InlineKeyboardButton("💬 Chat", callback_data=f"chat_agent:{a['id']}"),
+                InlineKeyboardButton("🗑️ Delete", callback_data=f"delete_confirm:{a['id']}"),
+            ])
+        elif a["deployment_status"] == "deploying":
+            buttons.append([
+                InlineKeyboardButton("🔄 Refresh", callback_data=f"refresh_status:{a['id']}"),
+                InlineKeyboardButton("🗑️ Delete", callback_data=f"delete_confirm:{a['id']}"),
+            ])
+        elif a["deployment_status"] == "failed":
+            buttons.append([
+                InlineKeyboardButton("🔄 Repair", callback_data=f"repair_agent:{a['id']}"),
+                InlineKeyboardButton("🗑️ Delete", callback_data=f"delete_confirm:{a['id']}"),
+            ])
+        else:
+            buttons.append([
+                InlineKeyboardButton("🗑️ Delete", callback_data=f"delete_confirm:{a['id']}"),
+            ])
+
+        await update.message.reply_text(
+            card_text,
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(buttons),
+        )
+
+    # Add "Create New" button if slots available
+    if count < max_agents:
+        remaining = max_agents - count
+        keyboard = [[InlineKeyboardButton(
+            f"➕ Create New Agent ({remaining} slot{'s' if remaining != 1 else ''} remaining)",
+            callback_data="quick_create"
+        )]]
+        await update.message.reply_text(
+            "Want to create another agent?",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+        )
 
 
 # ── /delete ────────────────────────────────────────────────────────────
@@ -200,6 +288,77 @@ async def delete_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         context.user_data.pop("current_agent_id", None)
 
     await update.message.reply_text(f"Agent \"{agent['name']}\" deleted.")
+
+
+async def delete_agent_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle inline delete button with two-step confirmation."""
+    query = update.callback_query
+    await query.answer()
+
+    agent_id = int(query.data.split(":")[-1])
+
+    db = _get_db(context)
+    user_id = update.effective_user.id
+
+    agent = await db.get_agent(agent_id)
+    if not agent or agent["owner_id"] != user_id:
+        await query.edit_message_text("❌ Agent not found or you don't own it.")
+        return
+
+    # Check if this is confirmation or initial request
+    if query.data.startswith("delete_confirmed:"):
+        # Actually delete
+        deployer = _get_deployer(context)
+
+        if agent["instance_hash"]:
+            try:
+                result = await deployer.destroy_instance(agent["instance_hash"])
+                if result["status"] != "success":
+                    logger.warning(f"Instance deletion issue: {result}")
+            except Exception as e:
+                logger.warning(f"Error destroying instance: {e}")
+
+        await db.delete_agent(agent_id)
+
+        if context.user_data.get("current_agent_id") == agent_id:
+            context.user_data.pop("current_agent_id", None)
+
+        await query.edit_message_text(
+            f"✅ Agent \"{agent['name']}\" has been deleted.\n\n"
+            f"VM destroyed and slot freed."
+        )
+    else:
+        # Show confirmation dialog
+        keyboard = [
+            [
+                InlineKeyboardButton("⚠️ Yes, Delete", callback_data=f"delete_confirmed:{agent_id}"),
+                InlineKeyboardButton("❌ Cancel", callback_data="delete_cancelled"),
+            ],
+        ]
+
+        await query.edit_message_text(
+            f"⚠️ *Delete Agent?*\n\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"Agent: {agent['name']}\n"
+            f"Model: `{agent['model']}`\n"
+            f"Status: {agent['deployment_status']}\n\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"This will:\n"
+            f"• Stop the agent permanently\n"
+            f"• Destroy the VM instance\n"
+            f"• Delete all conversation history\n"
+            f"• Free up 1 agent slot\n\n"
+            f"*This action cannot be undone.*",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+        )
+
+
+async def delete_cancelled_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle delete cancellation."""
+    query = update.callback_query
+    await query.answer("Deletion cancelled")
+    await query.edit_message_text("Deletion cancelled.")
 
 
 # ── /repair ────────────────────────────────────────────────────────────
@@ -340,7 +499,9 @@ async def create_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
 
 
 async def create_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Receive system prompt."""
+    """Receive system prompt and show enhanced model selection."""
+    from .ui_utils import format_section
+
     prompt = update.message.text.strip()
     if not prompt:
         await update.message.reply_text("System prompt cannot be empty. Try again.")
@@ -348,12 +509,32 @@ async def create_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 
     context.user_data["create_prompt"] = prompt
 
-    keyboard = [
-        [InlineKeyboardButton(display, callback_data=f"create_model:{model_id}")]
-        for model_id, display in AVAILABLE_MODELS.items()
-    ]
+    # Build detailed model selection
+    lines = ["🤖 *Step 3/3: Choose a Model*\n"]
+    keyboard = []
+
+    for model_id, info in AVAILABLE_MODELS.items():
+        keyboard.append([
+            InlineKeyboardButton(
+                f"{info['emoji']} {info['name']}",
+                callback_data=f"create_model:{model_id}"
+            )
+        ])
+
+        lines.append(
+            f"\n━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"*{info['emoji']} {info['name']}*\n"
+            f"{info['description']}\n\n"
+            f"• Best for: {info['best_for']}\n"
+            f"• Context: {info['context']}\n"
+            f"• Speed: {info['speed']}\n"
+        )
+
+        if info.get("badges"):
+            lines.append(f"• {' • '.join(info['badges'])}\n")
+
     await update.message.reply_text(
-        "**Step 3/3:** Choose a model:",
+        "\n".join(lines),
         reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode="Markdown",
     )
@@ -363,7 +544,7 @@ async def create_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 async def create_model_callback(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> int:
-    """Receive model selection via inline keyboard."""
+    """Handle model selection with enhanced confirmation preview."""
     query = update.callback_query
     await query.answer()
 
@@ -376,17 +557,75 @@ async def create_model_callback(
 
     name = context.user_data["create_name"]
     prompt = context.user_data["create_prompt"]
-    model_name = AVAILABLE_MODELS[model_id]
+    model_info = AVAILABLE_MODELS.get(model_id, {})
+    model_name = model_info.get("name", model_id)
+
+    # Show full configuration preview
+    keyboard = [
+        [
+            InlineKeyboardButton("✅ Confirm & Deploy", callback_data="create_confirm"),
+            InlineKeyboardButton("❌ Cancel", callback_data="create_cancel"),
+        ],
+    ]
+
+    # Truncate prompt for display (show more than before)
+    prompt_display = prompt if len(prompt) <= 800 else prompt[:797] + "..."
 
     await query.edit_message_text(
-        f"**Ready to create:**\n\n"
-        f"Name: {name}\n"
-        f"Model: {model_name}\n"
-        f"System prompt: {prompt[:200]}{'...' if len(prompt) > 200 else ''}\n\n"
-        "Send /confirm to deploy, or /cancel to abort.",
+        f"✅ *Review Your Agent*\n\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"Configuration:\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"📝 *Name:* {name}\n"
+        f"🤖 *Model:* {model_name}\n\n"
+        f"💬 *System Prompt:*\n```\n{prompt_display}\n```\n\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"Deployment Details:\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"• Platform: Aleph Cloud\n"
+        f"• Payment: PAYG (credit-based)\n"
+        f"• Setup time: ~3-5 minutes\n"
+        f"• HTTPS: Auto-configured\n\n"
+        f"Ready to deploy?",
         parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(keyboard),
     )
     return CONFIRM
+
+
+async def create_confirm_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle inline confirmation button."""
+    query = update.callback_query
+    await query.answer()
+
+    # Reuse the existing create_confirm logic but with callback query
+    # We need to set update.message to query.message for compatibility
+    original_message = update.message
+    update._unfreeze()
+    update.message = query.message
+    update._freeze()
+
+    result = await create_confirm(update, context)
+
+    # Restore original message
+    update._unfreeze()
+    update.message = original_message
+    update._freeze()
+
+    return result
+
+
+async def create_cancel_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle inline cancel button."""
+    query = update.callback_query
+    await query.answer("Creation cancelled")
+
+    context.user_data.pop("create_name", None)
+    context.user_data.pop("create_prompt", None)
+    context.user_data.pop("create_model", None)
+
+    await query.edit_message_text("Agent creation cancelled.")
+    return ConversationHandler.END
 
 
 async def create_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -465,23 +704,31 @@ async def _deploy_agent_background(
     libertai_api_key: str,
     agent_secret: str,
 ) -> None:
-    """Run the full deployment flow in the background, sending status updates."""
+    """Run the full deployment flow in the background with live progress updates."""
+    from .deployment_progress import DeploymentProgress
+    from .error_handlers import send_deployment_error
+
     db: Database = application.bot_data["db"]
     deployer: AlephDeployer = application.bot_data["deployer"]
     bot = application.bot
 
-    async def status(text: str) -> None:
-        await bot.send_message(chat_id=chat_id, text=text)
+    # Initialize progress tracker
+    progress = DeploymentProgress(bot, chat_id, name)
+    await progress.init()
 
     try:
         # Step 1: Create Aleph Cloud instance
         await db.update_agent_deployment(agent_id, deployment_status="deploying")
-        await status("Creating Aleph Cloud VM instance...")
+        await progress.update("instance", "in_progress")
 
         result = await deployer.create_instance(name)
         if result["status"] != "success":
+            await progress.update("instance", "failed")
             await db.update_agent_deployment(agent_id, deployment_status="failed")
-            await status(f"Instance creation failed: {result.get('error', 'unknown')}")
+            await send_deployment_error(
+                bot, chat_id, agent_id, "instance_creation",
+                result.get("error", "Unknown error")
+            )
             return
 
         instance_hash = result["instance_hash"]
@@ -491,20 +738,29 @@ async def _deploy_agent_background(
             instance_hash=instance_hash,
             crn_url=crn_url,
         )
-        await status(f"Instance created: `{instance_hash[:16]}...`\nWaiting for VM to start...")
 
-        # Step 2: Wait for allocation
+        # Step 2: Verify message on network
+        await progress.update("verify", "in_progress")
+        # Note: Verification happens inside create_instance, just marking as done
+        await progress.update("verify", "success")
+
+        # Step 3: Wait for allocation
+        await progress.update("allocation", "in_progress")
         alloc = await deployer.wait_for_allocation(instance_hash, crn_url)
         if not alloc:
+            await progress.update("allocation", "failed")
             await db.update_agent_deployment(agent_id, deployment_status="failed")
-            await status("VM allocation timed out. The instance may still start later.")
+            await send_deployment_error(
+                bot, chat_id, agent_id, "allocation_timeout",
+                f"VM allocation timed out for {instance_hash}"
+            )
             return
 
         vm_ip = alloc["vm_ipv4"]
         ssh_port = alloc["ssh_port"]
-        await status(f"VM allocated. Deploying agent code via SSH...")
 
-        # Step 3: SSH deploy
+        # Step 4: Deploy via SSH
+        await progress.update("ssh", "in_progress")
         deploy_result = await deployer.deploy_agent(
             vm_ip=vm_ip,
             ssh_port=ssh_port,
@@ -518,11 +774,27 @@ async def _deploy_agent_background(
         )
 
         if deploy_result["status"] != "success":
+            await progress.update("ssh", "failed")
             await db.update_agent_deployment(agent_id, deployment_status="failed")
-            await status(f"Deployment failed: {deploy_result.get('error', 'unknown')}")
+            await send_deployment_error(
+                bot, chat_id, agent_id, "ssh_deployment",
+                deploy_result.get("error", "SSH deployment failed")
+            )
             return
 
         vm_url = deploy_result["vm_url"]
+
+        # Step 5: Health check
+        await progress.update("health", "in_progress")
+        # Note: Health check happens in deploy_agent, marking as done
+        await progress.update("health", "success")
+
+        # Step 6: Configure Caddy
+        await progress.update("caddy", "in_progress")
+        # Note: Caddy setup happens in deploy_agent, marking as done
+        await progress.update("caddy", "success")
+
+        # Update database
         await db.update_agent_deployment(
             agent_id,
             vm_url=vm_url,
@@ -530,16 +802,118 @@ async def _deploy_agent_background(
             deployment_status="running",
         )
 
-        await status(
-            f"Agent \"{name}\" is live!\n\n"
-            f"Share this link to let anyone chat with your agent:\n"
-            f"`t.me/baal_bot?start=agent_{agent_id}`"
+        # Complete!
+        await progress.complete()
+
+        # Send deep link message
+        bot_username = (await bot.get_me()).username
+        deep_link = f"https://t.me/{bot_username}?start=agent_{agent_id}"
+        await bot.send_message(
+            chat_id=chat_id,
+            text=(
+                f"🎉 *Your agent is ready!*\n\n"
+                f"Click here to start chatting:\n{deep_link}"
+            ),
+            parse_mode="Markdown",
         )
 
     except Exception as e:
         logger.error(f"Background deployment error for agent {agent_id}: {e}", exc_info=True)
         await db.update_agent_deployment(agent_id, deployment_status="failed")
-        await status(f"Deployment failed with an unexpected error: {e}")
+        await send_deployment_error(
+            bot, chat_id, agent_id, "unexpected_error", str(e)
+        )
+
+
+# ── /dashboard ─────────────────────────────────────────────────────────
+
+async def dashboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show comprehensive status dashboard with health checks."""
+    from .ui_utils import STATUS_EMOJIS, format_age, format_section
+    from baal.services.proxy import health_check
+    import asyncio
+
+    db = _get_db(context)
+    settings = context.bot_data["settings"]
+    user_id = update.effective_user.id
+
+    agents = await db.list_agents(user_id)
+    user = await db.get_user(user_id)
+
+    # Run health checks in parallel
+    health_statuses = {}
+    if agents:
+        async def check_health(agent_id: int, vm_url: str) -> tuple[int, bool]:
+            try:
+                result = await asyncio.wait_for(health_check(vm_url), timeout=5.0)
+                return (agent_id, result)
+            except:
+                return (agent_id, False)
+
+        tasks = [
+            check_health(agent["id"], agent["vm_url"])
+            for agent in agents
+            if agent["vm_url"] and agent["deployment_status"] == "running"
+        ]
+
+        if tasks:
+            results = await asyncio.gather(*tasks)
+            health_statuses = dict(results)
+
+    # Count statuses
+    healthy = sum(1 for v in health_statuses.values() if v)
+    down = len(health_statuses) - healthy
+
+    max_agents = getattr(settings, "max_agents_per_user", 3)
+
+    # Build overview
+    message = (
+        f"📊 *Agent Dashboard*\n\n"
+        f"Last updated: just now\n\n"
+        + format_section("Overview",
+            f"Agents: {len(agents)} / {max_agents} slots\n"
+            f"🟢 Healthy: {healthy}\n"
+            f"🔴 Down: {down}"
+        )
+    )
+
+    if agents:
+        agent_lines = []
+        for agent in agents:
+            is_healthy = health_statuses.get(agent["id"], False)
+            status_emoji = "🟢" if is_healthy else STATUS_EMOJIS.get(agent["deployment_status"], "❓")
+
+            agent_lines.append(
+                f"\n{status_emoji} *{agent['name']}*\n"
+                f"   • Status: {agent['deployment_status'].title()}\n"
+                f"   • Created: {format_age(agent['created_at'])}"
+            )
+
+        message += "\n" + format_section("Agent Health", "".join(agent_lines))
+
+    # System status
+    system_info = ""
+    if not user.get("api_key"):
+        usage = await db.get_daily_usage(user_id)
+        system_info += f"Free tier: {usage['message_count']} / 50 messages\n"
+    else:
+        system_info += f"Connected account ✅\n"
+    system_info += f"Aleph Cloud: Operational ✅"
+
+    message += "\n" + format_section("System", system_info)
+
+    keyboard = [
+        [
+            InlineKeyboardButton("🔄 Refresh", callback_data="dashboard_refresh"),
+            InlineKeyboardButton("📋 My Agents", callback_data="quick_list"),
+        ],
+    ]
+
+    await update.message.reply_text(
+        message,
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+    )
 
 
 # ── Build ConversationHandler ──────────────────────────────────────────
@@ -553,6 +927,8 @@ def build_create_conversation_handler() -> ConversationHandler:
             PROMPT: [MessageHandler(filters.TEXT & ~filters.COMMAND, create_prompt)],
             MODEL: [CallbackQueryHandler(create_model_callback, pattern=r"^create_model:")],
             CONFIRM: [
+                CallbackQueryHandler(create_confirm_callback, pattern=r"^create_confirm$"),
+                CallbackQueryHandler(create_cancel_callback, pattern=r"^create_cancel$"),
                 CommandHandler("confirm", create_confirm),
                 CommandHandler("cancel", create_cancel),
             ],

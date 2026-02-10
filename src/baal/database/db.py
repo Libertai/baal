@@ -66,6 +66,19 @@ class Database:
                 message_count INTEGER DEFAULT 0,
                 PRIMARY KEY (telegram_id, date)
             );
+
+            CREATE TABLE IF NOT EXISTS deployment_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                agent_id INTEGER NOT NULL REFERENCES agents(id),
+                status TEXT NOT NULL,
+                step TEXT,
+                error_message TEXT,
+                duration_seconds INTEGER,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_deployment_history_agent
+                ON deployment_history (agent_id, created_at DESC);
         """)
 
     # ── Generic helpers ────────────────────────────────────────────────
@@ -221,3 +234,33 @@ class Database:
             (telegram_id, today),
         )
         await self.db.commit()
+
+    # ── Deployment history methods ─────────────────────────────────────
+
+    async def log_deployment_event(
+        self,
+        agent_id: int,
+        status: str,
+        step: str | None = None,
+        error_message: str | None = None,
+        duration_seconds: int | None = None,
+    ) -> None:
+        """Log a deployment event to history."""
+        now = datetime.now(timezone.utc).isoformat()
+        await self.db.execute(
+            """INSERT INTO deployment_history
+               (agent_id, status, step, error_message, duration_seconds, created_at)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (agent_id, status, step, error_message, duration_seconds, now),
+        )
+        await self.db.commit()
+
+    async def get_deployment_history(self, agent_id: int, limit: int = 10) -> list[dict]:
+        """Get deployment history for an agent."""
+        return await self.fetch_all(
+            """SELECT * FROM deployment_history
+               WHERE agent_id = ?
+               ORDER BY created_at DESC
+               LIMIT ?""",
+            (agent_id, limit),
+        )
