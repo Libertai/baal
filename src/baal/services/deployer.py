@@ -563,23 +563,34 @@ class AlephDeployer:
 
             # Pipe tar output to SSH input
             async def pipe_data():
-                if tar_proc.stdout and ssh_proc.stdin:
-                    while True:
-                        chunk = await tar_proc.stdout.read(8192)
-                        if not chunk:
-                            break
-                        ssh_proc.stdin.write(chunk)
-                        await ssh_proc.stdin.drain()
-                    ssh_proc.stdin.close()
-                    await ssh_proc.stdin.wait_closed()
+                try:
+                    if tar_proc.stdout and ssh_proc.stdin:
+                        while True:
+                            chunk = await tar_proc.stdout.read(8192)
+                            if not chunk:
+                                break
+                            ssh_proc.stdin.write(chunk)
+                            await ssh_proc.stdin.drain()
+                except Exception as e:
+                    logger.warning(f"Error during tar pipe: {e}")
+                finally:
+                    if ssh_proc.stdin:
+                        ssh_proc.stdin.close()
+                        try:
+                            await ssh_proc.stdin.wait_closed()
+                        except:
+                            pass
 
-            # Run piping and wait for processes
-            pipe_task = asyncio.create_task(pipe_data())
-            ssh_stdout, ssh_stderr = await asyncio.wait_for(
-                ssh_proc.communicate(), timeout=timeout
-            )
-            await pipe_task
+            # Run piping with timeout
+            await asyncio.wait_for(pipe_data(), timeout=timeout)
+
+            # Now wait for SSH process to complete
+            await ssh_proc.wait()
             await tar_proc.wait()
+
+            # Get output
+            ssh_stdout = await ssh_proc.stdout.read() if ssh_proc.stdout else b""
+            ssh_stderr = await ssh_proc.stderr.read() if ssh_proc.stderr else b""
 
             return (
                 ssh_proc.returncode or 0,
