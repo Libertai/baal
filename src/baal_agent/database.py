@@ -88,6 +88,77 @@ class AgentDatabase:
             messages.append(msg)
         return messages
 
+    async def compact_history(
+        self, chat_id: str, keep_recent: int, summary: str
+    ) -> None:
+        """Replace old messages with a summary pair, keeping recent messages.
+
+        1. Find the cutoff timestamp (the keep_recent-th most recent message)
+        2. Delete all messages older than that cutoff
+        3. Insert a user+assistant summary pair just before the cutoff
+        """
+        # Count total
+        cursor = await self.db.execute(
+            "SELECT COUNT(*) as cnt FROM messages WHERE chat_id = ?", (chat_id,)
+        )
+        row = await cursor.fetchone()
+        total = row["cnt"] if row else 0
+        if total <= keep_recent:
+            return
+
+        # Find the cutoff: the created_at of the (keep_recent)-th most recent message
+        cursor = await self.db.execute(
+            "SELECT created_at FROM messages WHERE chat_id = ? "
+            "ORDER BY created_at DESC LIMIT 1 OFFSET ?",
+            (chat_id, keep_recent - 1),
+        )
+        cutoff_row = await cursor.fetchone()
+        if not cutoff_row:
+            return
+        cutoff = cutoff_row["created_at"]
+
+        # Delete old messages (strictly before the cutoff)
+        await self.db.execute(
+            "DELETE FROM messages WHERE chat_id = ? AND created_at < ?",
+            (chat_id, cutoff),
+        )
+
+        # Find the earliest remaining message's timestamp to place summary before it
+        cursor = await self.db.execute(
+            "SELECT MIN(created_at) as earliest FROM messages WHERE chat_id = ?",
+            (chat_id,),
+        )
+        earliest_row = await cursor.fetchone()
+        earliest = earliest_row["earliest"] if earliest_row else cutoff
+
+        # Insert summary pair just before the earliest remaining message.
+        # Use timestamps that sort before the kept messages.
+        # Parse earliest and subtract 2s / 1s to ensure ordering.
+        from datetime import datetime, timedelta, timezone
+
+        try:
+            earliest_dt = datetime.fromisoformat(earliest)
+        except (ValueError, TypeError):
+            earliest_dt = datetime.now(timezone.utc)
+
+        summary_user_ts = (earliest_dt - timedelta(seconds=2)).isoformat()
+        summary_asst_ts = (earliest_dt - timedelta(seconds=1)).isoformat()
+
+        await self.db.execute(
+            "INSERT INTO messages (chat_id, role, content, created_at) VALUES (?, ?, ?, ?)",
+            (chat_id, "user", f"[Earlier conversation summary]\n\n{summary}", summary_user_ts),
+        )
+        await self.db.execute(
+            "INSERT INTO messages (chat_id, role, content, created_at) VALUES (?, ?, ?, ?)",
+            (
+                chat_id,
+                "assistant",
+                "Understood, I have the context from our previous conversation.",
+                summary_asst_ts,
+            ),
+        )
+        await self.db.commit()
+
     async def clear_history(self, chat_id: str) -> int:
         """Delete all messages for a chat_id. Returns count deleted."""
         cursor = await self.db.execute(

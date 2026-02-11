@@ -14,14 +14,15 @@ def build_system_prompt(
 ) -> str:
     """Assemble the full system prompt from identity, instructions, memory, and skills."""
     workspace = Path(workspace_path)
-    now = datetime.now(timezone.utc)
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
     sections = []
 
-    # Identity block
+    # Identity block — date-only timestamp keeps the system prompt stable
+    # across turns within a day, enabling vLLM prefix caching.
     identity = (
         f"You are {agent_name}, a personal AI agent.\n"
-        f"Current time: {now.strftime('%Y-%m-%d %H:%M UTC')}\n"
+        f"Current date: {today}\n"
         f"Workspace: {workspace_path}"
     )
     if tool_names:
@@ -47,7 +48,7 @@ def build_system_prompt(
         "## Memory System\n\n"
         "You have persistent memory. To remember things across conversations:\n"
         f"- Long-term: Write to `{workspace_path}/memory/MEMORY.md` using write_file or edit_file\n"
-        f"- Daily notes: Write to `{workspace_path}/memory/{now.strftime('%Y-%m-%d')}.md`\n"
+        f"- Daily notes: Write to `{workspace_path}/memory/{today}.md`\n"
         "- Save user preferences, project context, and important facts to MEMORY.md\n"
         "- Save session-specific notes to daily files\n"
         "- Read skill files for detailed instructions when a skill is relevant"

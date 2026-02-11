@@ -18,3 +18,6 @@ class AgentSettings(BaseSettings):
     workspace_path: str = "/opt/baal-agent/workspace"
     owner_chat_id: str = ""  # Telegram chat ID for heartbeat delivery
     heartbeat_interval: int = 1800  # 30 minutes
+    max_context_tokens: int = 0  # 0 = auto-detect from model name
+    generation_reserve: int = 4096  # tokens reserved for model output
+    compaction_keep_messages: int = 20  # recent messages to preserve during compaction

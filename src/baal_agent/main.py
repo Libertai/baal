@@ -11,6 +11,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
+from baal_agent.compaction import maybe_compact
 from baal_agent.config import AgentSettings
 from baal_agent.context import build_system_prompt
 from baal_agent.database import AgentDatabase
@@ -99,22 +100,20 @@ async def _run_agent_turn(
     tools = get_tool_definitions(include_spawn=not restricted)
     tool_names = [t["function"]["name"] for t in tools]
 
-    if store_history:
-        await db.add_message(chat_id, "user", message)
-
-    history = await db.get_history(chat_id, limit=settings.max_history) if store_history else []
-
     system_prompt = build_system_prompt(
         settings.system_prompt,
         settings.agent_name,
         settings.workspace_path,
         tool_names=tool_names,
     )
-    messages = [{"role": "system", "content": system_prompt}]
-    messages.extend(history)
 
-    # If history didn't include the message we just stored, add it
-    if not store_history:
+    if store_history:
+        await db.add_message(chat_id, "user", message)
+        messages = await maybe_compact(
+            db, inference, chat_id, system_prompt, settings.model, settings
+        )
+    else:
+        messages = [{"role": "system", "content": system_prompt}]
         messages.append({"role": "user", "content": message})
 
     final_text = None
@@ -354,17 +353,17 @@ async def chat(req: ChatRequest):
             tools = get_tool_definitions(include_spawn=True)
             tool_names = [t["function"]["name"] for t in tools]
 
-            await db.add_message(req.chat_id, "user", req.message)
-
-            history = await db.get_history(req.chat_id, limit=settings.max_history)
             system_prompt = build_system_prompt(
                 settings.system_prompt,
                 settings.agent_name,
                 settings.workspace_path,
                 tool_names=tool_names,
             )
-            messages = [{"role": "system", "content": system_prompt}]
-            messages.extend(history)
+
+            await db.add_message(req.chat_id, "user", req.message)
+            messages = await maybe_compact(
+                db, inference, req.chat_id, system_prompt, settings.model, settings
+            )
 
             for _iteration in range(settings.max_tool_iterations):
                 # Call inference with keepalive to prevent CRN gateway timeouts.
