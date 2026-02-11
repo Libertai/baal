@@ -162,6 +162,31 @@ async def verbose_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     await update.message.reply_text(f"Tool visibility: {state}")
 
 
+# ── /pool ──────────────────────────────────────────────────────────────
+
+async def pool_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show VM pool status."""
+    pool = context.bot_data.get("vm_pool")
+    if not pool:
+        await update.message.reply_text("VM pool is not enabled.")
+        return
+
+    stats = await pool.get_stats()
+
+    text = (
+        "<b>VM Pool Status</b>\n\n"
+        f"Available: {stats.get('warm', 0)}\n"
+        f"Provisioning: {stats.get('provisioning', 0)}\n"
+        f"Claimed: {stats.get('claimed', 0)}\n"
+        f"Deployed: {stats.get('deployed', 0)}\n"
+        f"Failed: {stats.get('failed', 0)}\n"
+        f"─────────────\n"
+        f"Total: {stats.get('total', 0)}"
+    )
+
+    await update.message.reply_text(text, parse_mode=ParseMode.HTML)
+
+
 # ── /manage ────────────────────────────────────────────────────────────
 
 async def manage_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -818,24 +843,49 @@ async def create_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     )
     await db.update_agent_deployment(agent["id"], auth_token=encrypted_secret)
 
-    await update.message.reply_text(
-        f"Agent \"{name}\" created (ID: {agent['id']}).\n"
-        f"Starting deployment to Aleph Cloud... This may take a few minutes."
-    )
+    # Try fast path: claim a pre-provisioned VM from the pool
+    pool = context.bot_data.get("vm_pool")
+    pooled_vm = await pool.claim() if pool else None
 
-    # Run deployment as a background task
-    context.application.create_task(
-        _deploy_agent_background(
-            context.application,
-            update.effective_chat.id,
-            agent["id"],
-            name,
-            system_prompt,
-            model,
-            libertai_key,
-            agent_secret,
+    if pooled_vm:
+        # Fast path: Deploy to pre-provisioned VM (~10-15 seconds)
+        await update.message.reply_text(
+            f"Agent \"{name}\" created (ID: {agent['id']}).\n"
+            f"Deploying to pre-provisioned VM... This takes ~15 seconds."
         )
-    )
+
+        context.application.create_task(
+            _deploy_agent_fast(
+                context.application,
+                update.effective_chat.id,
+                agent["id"],
+                name,
+                system_prompt,
+                model,
+                libertai_key,
+                agent_secret,
+                pooled_vm,
+            )
+        )
+    else:
+        # Slow path: Full provisioning (~2-3 minutes)
+        await update.message.reply_text(
+            f"Agent \"{name}\" created (ID: {agent['id']}).\n"
+            f"Starting deployment to Aleph Cloud... This may take a few minutes."
+        )
+
+        context.application.create_task(
+            _deploy_agent_background(
+                context.application,
+                update.effective_chat.id,
+                agent["id"],
+                name,
+                system_prompt,
+                model,
+                libertai_key,
+                agent_secret,
+            )
+        )
 
     return ConversationHandler.END
 
@@ -857,6 +907,115 @@ async def create_exit_silently(update: Update, context: ContextTypes.DEFAULT_TYP
     context.user_data.pop("create_model", None)
     # Exit without message since they're doing something else
     return ConversationHandler.END
+
+
+# ── Fast deployment (pre-provisioned VM) ───────────────────────────────
+
+async def _deploy_agent_fast(
+    application,
+    chat_id: int,
+    agent_id: int,
+    name: str,
+    system_prompt: str,
+    model: str,
+    libertai_api_key: str,
+    agent_secret: str,
+    pooled_vm,
+) -> None:
+    """Deploy agent to a pre-provisioned VM from the pool (~10-15 seconds)."""
+    import time as _time
+
+    from .error_handlers import send_deployment_error
+
+    db: Database = application.bot_data["db"]
+    deployer: AlephDeployer = application.bot_data["deployer"]
+    pool = application.bot_data.get("vm_pool")
+    bot = application.bot
+
+    deploy_start = _time.monotonic()
+
+    try:
+        await db.update_agent_deployment(
+            agent_id,
+            deployment_status="deploying",
+            instance_hash=pooled_vm.instance_hash,
+            crn_url=pooled_vm.crn_url,
+        )
+
+        # Deploy agent code via SSH (VM already running!)
+        deploy_result = await deployer.deploy_agent(
+            vm_ip=pooled_vm.vm_ip,
+            ssh_port=pooled_vm.ssh_port,
+            agent_name=name,
+            system_prompt=system_prompt,
+            model=model,
+            libertai_api_key=libertai_api_key,
+            agent_secret=agent_secret,
+            instance_hash=pooled_vm.instance_hash,
+            owner_chat_id=str(chat_id),
+        )
+
+        if deploy_result["status"] != "success":
+            # Release VM back to pool for reuse
+            if pool:
+                await pool.release(pooled_vm.id)
+            await db.update_agent_deployment(agent_id, deployment_status="failed")
+            await send_deployment_error(
+                bot, chat_id, agent_id, "ssh_deployment",
+                deploy_result.get("error", "SSH deployment failed")
+            )
+            duration = int(_time.monotonic() - deploy_start)
+            await db.log_deployment_event(
+                agent_id, "failed", "ssh_deployment",
+                deploy_result.get("error"), duration,
+            )
+            return
+
+        vm_url = deploy_result["vm_url"]
+
+        # Mark pool VM as deployed
+        if pool:
+            await pool.mark_deployed(pooled_vm.id, agent_id)
+
+        # Update database
+        await db.update_agent_deployment(
+            agent_id,
+            vm_url=vm_url,
+            vm_ipv6=pooled_vm.vm_ip,
+            deployment_status="running",
+        )
+
+        # Log successful deployment
+        duration = int(_time.monotonic() - deploy_start)
+        await db.log_deployment_event(agent_id, "success", duration_seconds=duration)
+        logger.info(f"Fast deployment of agent {agent_id} completed in {duration}s")
+
+        # Send deep link message
+        bot_username = (await bot.get_me()).username
+        deep_link = f"https://t.me/{bot_username}?start=agent_{agent_id}"
+        await bot.send_message(
+            chat_id=chat_id,
+            text=(
+                f"*Your agent is ready!*\n\n"
+                f"Deployed in {duration} seconds.\n"
+                f"Click here to start chatting:\n{deep_link}"
+            ),
+            parse_mode="Markdown",
+        )
+
+    except Exception as e:
+        logger.error(f"Fast deployment error for agent {agent_id}: {e}", exc_info=True)
+        # Release VM back to pool on error
+        if pool:
+            await pool.release(pooled_vm.id)
+        await db.update_agent_deployment(agent_id, deployment_status="failed")
+        await send_deployment_error(
+            bot, chat_id, agent_id, "unexpected_error", str(e)
+        )
+        duration = int(_time.monotonic() - deploy_start)
+        await db.log_deployment_event(
+            agent_id, "failed", "unexpected_error", str(e), duration,
+        )
 
 
 # ── Background deployment task ─────────────────────────────────────────

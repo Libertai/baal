@@ -25,3 +25,11 @@ class Settings(BaseSettings):
 
     # Database
     db_path: str = "baal.db"
+
+    # VM Pool (instant agent deployment)
+    pool_enabled: bool = True
+    pool_db_path: str = "pool.db"
+    pool_min_size: int = 5
+    pool_max_size: int = 10
+    pool_replenish_interval: int = 30  # seconds
+    pool_max_age_hours: int = 24  # cleanup stale warm VMs
