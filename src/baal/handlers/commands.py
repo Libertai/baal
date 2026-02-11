@@ -32,7 +32,7 @@ AVAILABLE_MODELS = {
         "emoji": "✨",
         "description": "Latest coding model",
         "best_for": "Code generation, debugging, technical tasks",
-        "context": "32K tokens",
+        "context": "96K tokens",
         "speed": "Fast",
         "badges": ["Recommended"],
     },
@@ -310,6 +310,10 @@ async def delete_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         result = await deployer.destroy_instance(agent["instance_hash"])
         if result["status"] != "success":
             logger.warning(f"Instance deletion issue for {agent['instance_hash']}: {result}")
+        # Clean up pool entry if this VM came from the pool
+        pool = context.bot_data.get("vm_pool")
+        if pool:
+            await pool.remove_by_instance(agent["instance_hash"])
 
     await db.delete_agent(agent_id)
 
@@ -347,6 +351,10 @@ async def delete_agent_callback(update: Update, context: ContextTypes.DEFAULT_TY
                     logger.warning(f"Instance deletion issue: {result}")
             except Exception as e:
                 logger.warning(f"Error destroying instance: {e}")
+            # Clean up pool entry if this VM came from the pool
+            pool = context.bot_data.get("vm_pool")
+            if pool:
+                await pool.remove_by_instance(agent["instance_hash"])
 
         await db.delete_agent(agent_id)
 
@@ -933,6 +941,7 @@ async def _deploy_agent_fast(
     bot = application.bot
 
     deploy_start = _time.monotonic()
+    deployed = False  # Track whether VM was successfully deployed
 
     try:
         await db.update_agent_deployment(
@@ -974,6 +983,7 @@ async def _deploy_agent_fast(
         vm_url = deploy_result["vm_url"]
 
         # Mark pool VM as deployed
+        deployed = True
         if pool:
             await pool.mark_deployed(pooled_vm.id, agent_id)
 
@@ -996,19 +1006,20 @@ async def _deploy_agent_fast(
         await bot.send_message(
             chat_id=chat_id,
             text=(
-                f"*Your agent is ready!*\n\n"
+                f"<b>Your agent is ready!</b>\n\n"
                 f"Deployed in {duration} seconds.\n"
                 f"Click here to start chatting:\n{deep_link}"
             ),
-            parse_mode="Markdown",
+            parse_mode=ParseMode.HTML,
         )
 
     except Exception as e:
         logger.error(f"Fast deployment error for agent {agent_id}: {e}", exc_info=True)
-        # Release VM back to pool on error
-        if pool:
+        # Only release VM back to pool if it wasn't already deployed
+        if pool and not deployed:
             await pool.release(pooled_vm.id)
-        await db.update_agent_deployment(agent_id, deployment_status="failed")
+        if not deployed:
+            await db.update_agent_deployment(agent_id, deployment_status="failed")
         await send_deployment_error(
             bot, chat_id, agent_id, "unexpected_error", str(e)
         )

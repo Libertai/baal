@@ -210,6 +210,13 @@ class VMPool:
         await self._db.execute("DELETE FROM vm_pool WHERE id = ?", (pool_id,))
         await self._db.commit()
 
+    async def remove_by_instance(self, instance_hash: str) -> None:
+        """Remove a pool entry by instance hash (no VM destruction — caller handles that)."""
+        await self._db.execute(
+            "DELETE FROM vm_pool WHERE instance_hash = ?", (instance_hash,)
+        )
+        await self._db.commit()
+
     # ── Replenishment ─────────────────────────────────────────────────
 
     async def start_replenisher(self) -> None:
