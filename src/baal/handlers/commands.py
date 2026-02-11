@@ -335,10 +335,19 @@ async def soul_edit_receive(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         if not api_key:
             api_key = settings.libertai_api_key
 
+        # Look up SSH port from CRN allocation (pool VMs use non-22 ports)
+        ssh_port = 22  # fallback
+        if agent.get("instance_hash") and agent.get("crn_url"):
+            alloc = await deployer.wait_for_allocation(
+                agent["instance_hash"], agent["crn_url"], retries=2, delay=3
+            )
+            if alloc:
+                ssh_port = alloc.get("ssh_port", 22)
+
         # Redeploy agent code with new prompt
         deploy_result = await deployer.deploy_agent(
             vm_ip=agent["vm_ipv6"],
-            ssh_port=22,
+            ssh_port=ssh_port,
             agent_name=agent["name"],
             system_prompt=new_prompt,
             model=agent["model"],
@@ -1221,6 +1230,12 @@ async def _deploy_agent_fast(
         await db.log_deployment_event(agent_id, "success", duration_seconds=duration)
         logger.info(f"Fast deployment of agent {agent_id} completed in {duration}s")
 
+        # Set auto-chat mode so user's next message routes to this agent
+        user_id = chat_id  # For DMs, chat_id == user_id
+        if user_id not in application.user_data:
+            application.user_data[user_id] = {}
+        application.user_data[user_id]["current_agent_id"] = agent_id
+
         # Send intro and auto-start chat
         keyboard = InlineKeyboardMarkup([
             [
@@ -1423,7 +1438,14 @@ async def _deploy_agent_background(
         await db.log_deployment_event(agent_id, "success", duration_seconds=duration)
         logger.info(f"Deployment of agent {agent_id} completed in {duration}s")
 
+        # Set auto-chat mode so user's next message routes to this agent
+        user_id = chat_id  # For DMs, chat_id == user_id
+        if user_id not in application.user_data:
+            application.user_data[user_id] = {}
+        application.user_data[user_id]["current_agent_id"] = agent_id
+
         # Send intro and auto-start chat
+        safe_name = html_mod.escape(name)
         keyboard = InlineKeyboardMarkup([
             [
                 InlineKeyboardButton("📝 Customize", callback_data=f"soul_agent:{agent_id}"),
@@ -1433,13 +1455,13 @@ async def _deploy_agent_background(
         await bot.send_message(
             chat_id=chat_id,
             text=(
-                f"*{name} is ready!*\n\n"
+                f"<b>{safe_name} is ready!</b>\n\n"
                 f"You're now chatting with your agent.\n"
                 f"Just type a message to start!\n\n"
                 f"• /soul — customize personality\n"
                 f"• /manage — exit chat"
             ),
-            parse_mode="Markdown",
+            parse_mode=ParseMode.HTML,
             reply_markup=keyboard,
         )
 
