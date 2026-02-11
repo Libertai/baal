@@ -13,7 +13,7 @@ class AgentSettings(BaseSettings):
     agent_secret: str  # Shared secret for bot<->agent auth
     port: int = 8080
     db_path: str = "agent.db"
-    max_history: int = 200
+    max_history: int = 100
     max_tool_iterations: int = 50
     workspace_path: str = "/opt/baal-agent/workspace"
     owner_chat_id: str = ""  # Telegram chat ID for heartbeat delivery
