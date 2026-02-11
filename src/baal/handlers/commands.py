@@ -26,6 +26,19 @@ logger = logging.getLogger(__name__)
 # ConversationHandler states for /create wizard
 NAME, PROMPT, MODEL, CONFIRM = range(4)
 
+# ConversationHandler states for /soul wizard
+SOUL_SELECT, SOUL_EDIT = range(10, 12)
+
+
+def _default_system_prompt(name: str) -> str:
+    """Generate a sensible default system prompt for an agent."""
+    return (
+        f"You are {name}, a capable AI assistant. You have access to tools for "
+        f"running code, reading and writing files, and searching the web. "
+        f"Be helpful, concise, and proactive. When given a task, break it down "
+        f"and work through it step by step."
+    )
+
 AVAILABLE_MODELS = {
     "qwen3-coder-next": {
         "name": "Qwen 3 Coder Next",
@@ -185,6 +198,201 @@ async def pool_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     )
 
     await update.message.reply_text(text, parse_mode=ParseMode.HTML)
+
+
+# ── /soul ──────────────────────────────────────────────────────────────
+
+async def soul_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show/edit agent's system prompt (personality)."""
+    db = _get_db(context)
+    user_id = update.effective_user.id
+
+    # Check if we have an agent_id argument
+    args = context.args
+    if args:
+        try:
+            agent_id = int(args[0])
+        except ValueError:
+            await update.message.reply_text("Usage: /soul or /soul <agent_id>")
+            return
+    else:
+        # Use current chat agent or show list
+        agent_id = context.user_data.get("current_agent_id")
+
+    if agent_id:
+        # Show this agent's soul
+        agent = await db.get_agent(agent_id)
+        if not agent or agent["owner_id"] != user_id:
+            await update.message.reply_text("Agent not found or not yours.")
+            return
+
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("✏️ Edit Personality", callback_data=f"soul_edit:{agent_id}")],
+            [InlineKeyboardButton("« Back", callback_data="quick_list")],
+        ])
+
+        prompt = agent["system_prompt"]
+        prompt_display = prompt if len(prompt) <= 800 else prompt[:797] + "..."
+
+        await update.message.reply_text(
+            f"<b>{agent['name']}'s Personality</b>\n\n"
+            f"<code>{html_mod.escape(prompt_display)}</code>\n\n"
+            f"This prompt shapes how your agent behaves and responds.",
+            parse_mode=ParseMode.HTML,
+            reply_markup=keyboard,
+        )
+    else:
+        # No current agent - show list of agents to choose from
+        agents = await db.list_agents(user_id)
+        if not agents:
+            await update.message.reply_text(
+                "You have no agents yet. Use /create to make one!"
+            )
+            return
+
+        keyboard = []
+        for a in agents:
+            if a["deployment_status"] == "running":
+                keyboard.append([
+                    InlineKeyboardButton(f"📝 {a['name']}", callback_data=f"soul_agent:{a['id']}")
+                ])
+
+        if not keyboard:
+            await update.message.reply_text("No running agents to customize.")
+            return
+
+        await update.message.reply_text(
+            "Which agent's personality would you like to customize?",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+        )
+
+
+async def soul_edit_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Start editing an agent's system prompt."""
+    query = update.callback_query
+    await query.answer()
+
+    agent_id = int(query.data.split(":")[-1])
+    db = _get_db(context)
+    user_id = update.effective_user.id
+
+    agent = await db.get_agent(agent_id)
+    if not agent or agent["owner_id"] != user_id:
+        await query.edit_message_text("Agent not found.")
+        return ConversationHandler.END
+
+    context.user_data["soul_agent_id"] = agent_id
+    context.user_data["soul_agent_name"] = agent["name"]
+
+    await query.edit_message_text(
+        f"<b>Edit {agent['name']}'s Personality</b>\n\n"
+        f"Current prompt:\n<code>{html_mod.escape(agent['system_prompt'][:500])}</code>\n\n"
+        f"Send a new prompt, or /cancel to keep the current one.",
+        parse_mode=ParseMode.HTML,
+    )
+    return SOUL_EDIT
+
+
+async def soul_edit_receive(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Receive new system prompt and update the agent."""
+    new_prompt = update.message.text.strip()
+
+    if not new_prompt or len(new_prompt) < 10:
+        await update.message.reply_text("Prompt too short. Please try again or /cancel.")
+        return SOUL_EDIT
+
+    agent_id = context.user_data.pop("soul_agent_id", None)
+    agent_name = context.user_data.pop("soul_agent_name", "Agent")
+
+    if not agent_id:
+        await update.message.reply_text("Session expired. Use /soul again.")
+        return ConversationHandler.END
+
+    db = _get_db(context)
+    deployer = _get_deployer(context)
+    settings = context.bot_data["settings"]
+
+    agent = await db.get_agent(agent_id)
+    if not agent:
+        await update.message.reply_text("Agent not found.")
+        return ConversationHandler.END
+
+    # Update in database
+    await db.update_agent(agent_id, system_prompt=new_prompt)
+
+    # Redeploy to apply new prompt
+    await update.message.reply_text(
+        f"Updating {agent_name}'s personality...\n"
+        f"This takes about 30 seconds."
+    )
+
+    try:
+        # Get agent connection info
+        encryption_key = settings.bot_encryption_key
+        agent_secret = decrypt(agent["auth_token"], encryption_key)
+        user = await db.get_user(update.effective_user.id)
+        api_key = user.get("api_key") if user else None
+        if not api_key:
+            api_key = settings.libertai_api_key
+
+        # Redeploy agent code with new prompt
+        deploy_result = await deployer.deploy_agent(
+            vm_ip=agent["vm_ipv6"],
+            ssh_port=22,
+            agent_name=agent["name"],
+            system_prompt=new_prompt,
+            model=agent["model"],
+            libertai_api_key=api_key,
+            agent_secret=agent_secret,
+            instance_hash=agent["instance_hash"],
+            owner_chat_id=str(update.effective_user.id),
+        )
+
+        if deploy_result["status"] == "success":
+            await update.message.reply_text(
+                f"✅ {agent_name}'s personality updated!\n\n"
+                f"Your agent will now behave according to the new prompt."
+            )
+        else:
+            await update.message.reply_text(
+                f"⚠️ Update may not have applied: {deploy_result.get('error', 'unknown')}\n"
+                f"The prompt is saved. Try /soul to verify."
+            )
+    except Exception as e:
+        logger.error(f"Soul update deploy failed: {e}")
+        await update.message.reply_text(
+            f"⚠️ Prompt saved but redeployment failed.\n"
+            f"Your agent will use the new prompt on next restart."
+        )
+
+    return ConversationHandler.END
+
+
+async def soul_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Cancel soul editing."""
+    context.user_data.pop("soul_agent_id", None)
+    context.user_data.pop("soul_agent_name", None)
+    await update.message.reply_text("Personality edit cancelled.")
+    return ConversationHandler.END
+
+
+def build_soul_conversation_handler() -> ConversationHandler:
+    """Build the ConversationHandler for /soul editing."""
+    return ConversationHandler(
+        entry_points=[
+            CallbackQueryHandler(soul_edit_start, pattern=r"^soul_edit:\d+$"),
+        ],
+        states={
+            SOUL_EDIT: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, soul_edit_receive),
+                CommandHandler("cancel", soul_cancel),
+            ],
+        },
+        fallbacks=[
+            CommandHandler("cancel", soul_cancel),
+        ],
+        per_message=False,
+    )
 
 
 # ── /manage ────────────────────────────────────────────────────────────
@@ -664,29 +872,46 @@ async def create_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
 
     await message.reply_text(
         "Let's create a new agent!\n\n"
-        "**Step 1/3:** What should your agent be named?"
-        ,
+        "*Step 1/2:* What should your agent be called?",
         parse_mode="Markdown",
     )
     return NAME
 
 
 async def create_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Receive agent name."""
+    """Receive agent name and show model selection (skip prompt input)."""
     name = update.message.text.strip()
     if not name or len(name) > 64:
         await update.message.reply_text("Name must be 1-64 characters. Try again.")
         return NAME
 
     context.user_data["create_name"] = name
-    safe_name = html_mod.escape(name)
+    # Use default prompt - users can customize later with /soul
+    context.user_data["create_prompt"] = _default_system_prompt(name)
+
+    # Build model selection (same as create_prompt used to do)
+    lines = [f"Great! Your agent will be called *{name}*\n\n*Step 2/2:* Choose a model:"]
+    keyboard = []
+
+    for model_id, info in AVAILABLE_MODELS.items():
+        keyboard.append([
+            InlineKeyboardButton(
+                f"{info['emoji']} {info['name']}",
+                callback_data=f"create_model:{model_id}"
+            )
+        ])
+        lines.append(
+            f"\n*{info['emoji']} {info['name']}*\n"
+            f"{info['description']}\n"
+            f"• {info['best_for']}"
+        )
+
     await update.message.reply_text(
-        f"Agent name: <b>{safe_name}</b>\n\n"
-        "<b>Step 2/3:</b> What system prompt should your agent use?\n"
-        "This tells the AI how to behave.",
-        parse_mode=ParseMode.HTML,
+        "\n".join(lines),
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode="Markdown",
     )
-    return PROMPT
+    return MODEL
 
 
 async def create_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -767,16 +992,12 @@ async def create_model_callback(
     safe_prompt = html_mod.escape(prompt_display)
 
     await query.edit_message_text(
-        f"<b>Review Your Agent</b>\n\n"
+        f"<b>Ready to Deploy</b>\n\n"
         f"<b>Name:</b> {safe_name}\n"
         f"<b>Model:</b> {safe_model}\n\n"
-        f"<b>System Prompt:</b>\n<code>{safe_prompt}</code>\n\n"
-        f"<b>Deployment Details:</b>\n"
-        f"  - Platform: Aleph Cloud\n"
-        f"  - Payment: PAYG (credit-based)\n"
-        f"  - Setup time: ~3-5 minutes\n"
-        f"  - HTTPS: Auto-configured\n\n"
-        f"Ready to deploy?",
+        f"Your agent will be deployed to Aleph Cloud.\n"
+        f"Setup takes ~2-3 minutes.\n\n"
+        f"<i>Tip: Use /soul to customize personality after creation.</i>",
         parse_mode=ParseMode.HTML,
         reply_markup=InlineKeyboardMarkup(keyboard),
     )
@@ -1000,18 +1221,39 @@ async def _deploy_agent_fast(
         await db.log_deployment_event(agent_id, "success", duration_seconds=duration)
         logger.info(f"Fast deployment of agent {agent_id} completed in {duration}s")
 
-        # Send deep link message
-        bot_username = (await bot.get_me()).username
-        deep_link = f"https://t.me/{bot_username}?start=agent_{agent_id}"
+        # Send intro and auto-start chat
+        keyboard = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("📝 Customize", callback_data=f"soul_agent:{agent_id}"),
+                InlineKeyboardButton("🚪 Exit Chat", callback_data="nav_main"),
+            ]
+        ])
         await bot.send_message(
             chat_id=chat_id,
             text=(
-                f"<b>Your agent is ready!</b>\n\n"
-                f"Deployed in {duration} seconds.\n"
-                f"Click here to start chatting:\n{deep_link}"
+                f"<b>{name} is ready!</b> (deployed in {duration}s)\n\n"
+                f"You're now chatting with your agent.\n"
+                f"Just type a message to start!\n\n"
+                f"• /soul — customize personality\n"
+                f"• /manage — exit chat"
             ),
             parse_mode=ParseMode.HTML,
+            reply_markup=keyboard,
         )
+
+        # Trigger agent's intro message
+        from baal.services.proxy import send_chat_message
+        try:
+            intro_response = await send_chat_message(
+                vm_url, agent_secret,
+                "Send a brief, friendly introduction (2-3 sentences). "
+                "Mention your name and what you can help with.",
+                f"intro_{chat_id}"
+            )
+            if intro_response:
+                await bot.send_message(chat_id=chat_id, text=intro_response)
+        except Exception as intro_err:
+            logger.debug(f"Intro message failed: {intro_err}")
 
     except Exception as e:
         logger.error(f"Fast deployment error for agent {agent_id}: {e}", exc_info=True)
@@ -1181,17 +1423,39 @@ async def _deploy_agent_background(
         await db.log_deployment_event(agent_id, "success", duration_seconds=duration)
         logger.info(f"Deployment of agent {agent_id} completed in {duration}s")
 
-        # Send deep link message
-        bot_username = (await bot.get_me()).username
-        deep_link = f"https://t.me/{bot_username}?start=agent_{agent_id}"
+        # Send intro and auto-start chat
+        keyboard = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("📝 Customize", callback_data=f"soul_agent:{agent_id}"),
+                InlineKeyboardButton("🚪 Exit Chat", callback_data="nav_main"),
+            ]
+        ])
         await bot.send_message(
             chat_id=chat_id,
             text=(
-                f"🎉 *Your agent is ready!*\n\n"
-                f"Click here to start chatting:\n{deep_link}"
+                f"*{name} is ready!*\n\n"
+                f"You're now chatting with your agent.\n"
+                f"Just type a message to start!\n\n"
+                f"• /soul — customize personality\n"
+                f"• /manage — exit chat"
             ),
             parse_mode="Markdown",
+            reply_markup=keyboard,
         )
+
+        # Trigger agent's intro message
+        from baal.services.proxy import send_chat_message
+        try:
+            intro_response = await send_chat_message(
+                vm_url, agent_secret,
+                "Send a brief, friendly introduction (2-3 sentences). "
+                "Mention your name and what you can help with.",
+                f"intro_{chat_id}"
+            )
+            if intro_response:
+                await bot.send_message(chat_id=chat_id, text=intro_response)
+        except Exception as intro_err:
+            logger.debug(f"Intro message failed: {intro_err}")
 
     except Exception as e:
         logger.error(f"Background deployment error for agent {agent_id}: {e}", exc_info=True)

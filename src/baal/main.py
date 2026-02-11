@@ -10,6 +10,7 @@ from baal.handlers.account import account_command, login_command, logout_command
 from baal.handlers.chat import handle_message
 from baal.handlers.commands import (
     build_create_conversation_handler,
+    build_soul_conversation_handler,
     dashboard_command,
     delete_agent_callback,
     delete_cancelled_callback,
@@ -19,6 +20,7 @@ from baal.handlers.commands import (
     manage_command,
     pool_command,
     repair_command,
+    soul_command,
     start_command,
     update_command,
     verbose_command,
@@ -264,6 +266,14 @@ async def handle_callback_query(update, context) -> None:
         if agent:
             await query.answer(f"Status: {agent['deployment_status']}")
 
+    elif data.startswith("soul_agent:"):
+        # Show soul for specific agent
+        agent_id = int(data.split(":")[-1])
+        context.args = [str(agent_id)]
+        await query.answer()
+        cmd_update = make_command_update(update)
+        await soul_command(cmd_update, context)
+
     elif data.startswith("nav_"):
         # Handle persistent navigation
         nav_target = data.split("_")[-1]
@@ -382,6 +392,10 @@ def create_application(settings: Settings | None = None) -> Application:
     app.add_handler(CommandHandler("verbose", verbose_command))
     app.add_handler(CommandHandler("dashboard", dashboard_command))
     app.add_handler(CommandHandler("pool", pool_command))
+    app.add_handler(CommandHandler("soul", soul_command))
+
+    # /soul edit wizard (ConversationHandler)
+    app.add_handler(build_soul_conversation_handler())
 
     # Callback query handler (inline keyboards)
     app.add_handler(CallbackQueryHandler(handle_callback_query))
