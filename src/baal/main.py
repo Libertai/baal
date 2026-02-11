@@ -17,6 +17,7 @@ from baal.handlers.commands import (
     help_command,
     list_command,
     manage_command,
+    pool_command,
     repair_command,
     start_command,
     update_command,
@@ -24,6 +25,7 @@ from baal.handlers.commands import (
 )
 
 from baal.services.deployer import AlephDeployer
+from baal.services.pool_manager import VMPool
 from baal.services.rate_limiter import RateLimiter
 
 logging.basicConfig(
@@ -130,6 +132,24 @@ async def post_init(application: Application) -> None:
     application.bot_data["db"] = db
     application.bot_data["rate_limiter"].db = db
 
+    # Initialize VM pool for instant agent deployment
+    if settings.pool_enabled:
+        deployer = application.bot_data["deployer"]
+        pool = VMPool(
+            db_path=settings.pool_db_path,
+            deployer=deployer,
+            min_size=settings.pool_min_size,
+            max_size=settings.pool_max_size,
+            replenish_interval=settings.pool_replenish_interval,
+            max_age_hours=settings.pool_max_age_hours,
+        )
+        await pool.initialize()
+        await pool.start_replenisher()
+        application.bot_data["vm_pool"] = pool
+        logger.info(
+            f"VM pool enabled (min={settings.pool_min_size}, max={settings.pool_max_size})"
+        )
+
     # Poll all agents for pending messages every 30 seconds
     application.job_queue.run_repeating(
         _poll_pending_messages, interval=30, first=10
@@ -139,6 +159,11 @@ async def post_init(application: Application) -> None:
 
 
 async def post_shutdown(application: Application) -> None:
+    pool = application.bot_data.get("vm_pool")
+    if pool:
+        await pool.close()
+        logger.info("VM pool closed")
+
     db = application.bot_data.get("db")
     if db:
         await db.close()
@@ -356,6 +381,7 @@ def create_application(settings: Settings | None = None) -> Application:
     app.add_handler(CommandHandler("account", account_command))
     app.add_handler(CommandHandler("verbose", verbose_command))
     app.add_handler(CommandHandler("dashboard", dashboard_command))
+    app.add_handler(CommandHandler("pool", pool_command))
 
     # Callback query handler (inline keyboards)
     app.add_handler(CallbackQueryHandler(handle_callback_query))
