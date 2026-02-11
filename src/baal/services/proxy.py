@@ -131,6 +131,37 @@ async def health_check(agent_url: str) -> bool:
         return False
 
 
+_IMAGE_EXTENSIONS = frozenset({".jpg", ".jpeg", ".png", ".gif", ".webp"})
+_TELEGRAM_PHOTO_MAX = 10 * 1024 * 1024  # 10 MB
+
+_FILE_TIMEOUT = httpx.Timeout(connect=10.0, read=60.0, write=10.0, pool=10.0)
+
+
+async def download_agent_file(
+    agent_url: str, auth_token: str, file_path: str
+) -> tuple[bytes, str, bool] | None:
+    """Download a file from an agent VM's /files/ endpoint.
+
+    Returns:
+        (file_bytes, filename, is_photo) on success, or None on failure.
+    """
+    try:
+        async with httpx.AsyncClient(timeout=_FILE_TIMEOUT) as client:
+            resp = await client.get(
+                f"{agent_url}/files/{file_path}",
+                headers={"Authorization": f"Bearer {auth_token}"},
+            )
+            resp.raise_for_status()
+            data = resp.content
+            filename = file_path.rsplit("/", 1)[-1] if "/" in file_path else file_path
+            ext = ("." + filename.rsplit(".", 1)[-1]).lower() if "." in filename else ""
+            is_photo = ext in _IMAGE_EXTENSIONS and len(data) <= _TELEGRAM_PHOTO_MAX
+            return data, filename, is_photo
+    except Exception as e:
+        logger.error(f"Failed to download file {file_path} from {agent_url}: {e}")
+        return None
+
+
 async def get_pending_messages(agent_url: str, auth_token: str) -> list[dict]:
     """Fetch pending proactive messages from an agent."""
     try:

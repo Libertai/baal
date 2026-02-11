@@ -11,7 +11,7 @@ from telegram.ext import ContextTypes
 
 from baal.database.db import Database
 from baal.services.encryption import decrypt
-from baal.services.proxy import get_pending_messages, stream_messages
+from baal.services.proxy import download_agent_file, get_pending_messages, stream_messages
 from baal.services.rate_limiter import RateLimiter
 
 logger = logging.getLogger(__name__)
@@ -59,6 +59,42 @@ async def _split_and_send(
 
     for chunk in chunks:
         await _send_one(update, chunk, parse_mode=parse_mode)
+
+
+async def _handle_pending_file(
+    update: Update,
+    agent_url: str,
+    auth_token: str,
+    agent_name: str,
+    content: str,
+) -> None:
+    """Download and send a file from a pending message."""
+    import io
+    import json
+
+    try:
+        meta = json.loads(content)
+    except (json.JSONDecodeError, TypeError):
+        return
+    file_path = meta.get("path", "")
+    caption = meta.get("caption") or None
+    if caption:
+        caption = f"*{agent_name}*: {caption}"
+
+    file_result = await download_agent_file(agent_url, auth_token, file_path)
+    if file_result:
+        data, filename, is_photo = file_result
+        if is_photo:
+            await update.message.reply_photo(
+                io.BytesIO(data), caption=caption, parse_mode="Markdown",
+            )
+        else:
+            await update.message.reply_document(
+                io.BytesIO(data), filename=filename,
+                caption=caption, parse_mode="Markdown",
+            )
+    else:
+        await update.message.reply_text("(Failed to download file from agent)")
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -169,6 +205,29 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 error_text = event.get("content", "Something went wrong")
                 await _split_and_send(update, f"Warning: {error_text}")
 
+            elif event_type == "file":
+                file_result = await download_agent_file(
+                    agent["vm_url"], auth_token, event.get("path", "")
+                )
+                if file_result:
+                    import io
+                    data, filename, is_photo = file_result
+                    caption = event.get("caption") or None
+                    if caption:
+                        caption = f"*{agent_name}*: {caption}"
+                    if is_photo:
+                        await update.message.reply_photo(
+                            io.BytesIO(data), caption=caption, parse_mode="Markdown",
+                        )
+                    else:
+                        await update.message.reply_document(
+                            io.BytesIO(data), filename=filename,
+                            caption=caption, parse_mode="Markdown",
+                        )
+                else:
+                    await update.message.reply_text("(Failed to download file from agent)")
+                await update.message.chat.send_action(ChatAction.TYPING)
+
             elif event_type == "tool_use" and show_tools:
                 await update.message.reply_text(f"\u2699\ufe0f {event['name']}")
                 await update.message.chat.send_action(ChatAction.TYPING)
@@ -180,11 +239,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         try:
             pending = await get_pending_messages(agent["vm_url"], auth_token)
             for msg in pending:
-                await _split_and_send(
-                    update,
-                    f"*{agent_name}*: {msg['content']}",
-                    parse_mode="Markdown",
-                )
+                source = msg.get("source", "")
+                if source.endswith("_file"):
+                    await _handle_pending_file(
+                        update, agent["vm_url"], auth_token, agent_name, msg["content"]
+                    )
+                else:
+                    await _split_and_send(
+                        update,
+                        f"*{agent_name}*: {msg['content']}",
+                        parse_mode="Markdown",
+                    )
         except Exception:
             pass  # Non-critical
 

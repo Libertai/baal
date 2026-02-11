@@ -8,14 +8,15 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 from baal_agent.config import AgentSettings
 from baal_agent.context import build_system_prompt
 from baal_agent.database import AgentDatabase
 from baal_agent.inference import InferenceClient
-from baal_agent.tools import execute_tool, get_tool_definitions
+from baal_agent.security import PathSecurityError, validate_workspace_path
+from baal_agent.tools import configure_tools, execute_tool, get_tool_definitions
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +33,7 @@ _heartbeat_task: asyncio.Task | None = None
 async def lifespan(app: FastAPI):
     global _heartbeat_task
     await db.initialize()
+    configure_tools(settings.workspace_path)
 
     # Ensure workspace directories exist
     workspace = Path(settings.workspace_path)
@@ -78,6 +80,7 @@ async def _run_agent_turn(
     restricted: bool = False,
     max_iterations: int | None = None,
     store_history: bool = True,
+    file_events: list[dict] | None = None,
 ) -> str | None:
     """Run a single agentic turn (message -> tool loop -> response).
 
@@ -87,6 +90,7 @@ async def _run_agent_turn(
         restricted: If True, use restricted tool set (no spawn).
         max_iterations: Override max tool iterations.
         store_history: Whether to persist messages to DB.
+        file_events: Optional accumulator for send_file events (heartbeat/subagent).
 
     Returns:
         The final text response, or None if no text was generated.
@@ -163,6 +167,15 @@ async def _run_agent_turn(
             else:
                 result = await execute_tool(name, arguments)
 
+            # Detect send_file markers and accumulate for callers
+            if isinstance(result, str) and result.startswith("__SEND_FILE__:"):
+                parts = result.split(":", 2)
+                rel_path = parts[1] if len(parts) > 1 else ""
+                caption = parts[2] if len(parts) > 2 else ""
+                if file_events is not None:
+                    file_events.append({"path": rel_path, "caption": caption})
+                result = f"File sent to user: {rel_path}"
+
             if store_history:
                 await db.add_message(chat_id, "tool", result, tool_call_id=tc.id)
             messages.append({
@@ -190,18 +203,26 @@ async def _handle_spawn(arguments: str | dict, origin_chat_id: str) -> str:
 async def _run_subagent(task: str, label: str, origin_chat_id: str):
     """Run a subagent in the background with restricted tools."""
     try:
+        files: list[dict] = []
         result = await _run_agent_turn(
             task,
             chat_id="__subagent__",
             restricted=True,
             max_iterations=15,
             store_history=False,
+            file_events=files,
         )
         await db.add_pending(
             origin_chat_id,
             f"[Task: {label}] {result or '(no output)'}",
             source="subagent",
         )
+        for fe in files:
+            await db.add_pending(
+                origin_chat_id,
+                json.dumps({"type": "file", "path": fe["path"], "caption": fe["caption"]}),
+                source="subagent_file",
+            )
     except Exception as e:
         logger.error(f"Subagent failed: {e}")
         await db.add_pending(
@@ -243,11 +264,13 @@ async def _heartbeat_loop():
             if _is_heartbeat_empty(content):
                 continue
 
+            files: list[dict] = []
             result = await _run_agent_turn(
                 "Read HEARTBEAT.md and follow any instructions or tasks listed there. "
                 "If nothing needs attention, reply with just: HEARTBEAT_OK",
                 chat_id="__heartbeat__",
                 store_history=False,
+                file_events=files,
             )
 
             if result and "HEARTBEAT_OK" not in result.upper().replace("_", ""):
@@ -256,6 +279,13 @@ async def _heartbeat_loop():
                         settings.owner_chat_id,
                         f"[Heartbeat] {result}",
                         source="heartbeat",
+                    )
+            if settings.owner_chat_id:
+                for fe in files:
+                    await db.add_pending(
+                        settings.owner_chat_id,
+                        json.dumps({"type": "file", "path": fe["path"], "caption": fe["caption"]}),
+                        source="heartbeat_file",
                     )
         except Exception as e:
             logger.error(f"Heartbeat error: {e}")
@@ -449,6 +479,14 @@ async def chat(req: ChatRequest):
                         )
                         result = f"Error executing {name}: {tool_error}"
 
+                    # Detect send_file markers and emit file SSE event
+                    if isinstance(result, str) and result.startswith("__SEND_FILE__:"):
+                        parts = result.split(":", 2)
+                        rel_path = parts[1] if len(parts) > 1 else ""
+                        caption = parts[2] if len(parts) > 2 else ""
+                        yield _sse_event({"type": "file", "path": rel_path, "caption": caption})
+                        result = f"File sent to user: {rel_path}"
+
                     await db.add_message(
                         req.chat_id, "tool", result, tool_call_id=tc.id
                     )
@@ -489,6 +527,18 @@ async def get_pending():
     """Return pending proactive messages and clear them."""
     messages = await db.get_and_clear_pending()
     return {"messages": messages}
+
+
+@app.get("/files/{file_path:path}")
+async def serve_file(file_path: str):
+    """Serve a workspace file (protected by auth middleware)."""
+    try:
+        resolved = validate_workspace_path(
+            file_path, settings.workspace_path, must_exist=True, reject_sensitive=True
+        )
+        return FileResponse(resolved, filename=resolved.name)
+    except PathSecurityError as e:
+        return JSONResponse(status_code=403, content={"error": str(e)})
 
 
 @app.get("/health")

@@ -33,6 +33,46 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+async def _send_pending_file(context, agent: dict, auth_token: str, content: str) -> None:
+    """Download a file from an agent and send it to the owner via Telegram."""
+    import io
+    import json as _json
+
+    from baal.services.proxy import download_agent_file
+
+    try:
+        meta = _json.loads(content)
+    except (ValueError, TypeError):
+        return
+    file_path = meta.get("path", "")
+    caption = meta.get("caption") or None
+    if caption:
+        caption = f"*{agent['name']}*: {caption}"
+
+    file_result = await download_agent_file(agent["vm_url"], auth_token, file_path)
+    if not file_result:
+        return
+    data, filename, is_photo = file_result
+    try:
+        if is_photo:
+            await context.bot.send_photo(
+                chat_id=agent["owner_id"],
+                photo=io.BytesIO(data),
+                caption=caption,
+                parse_mode="Markdown",
+            )
+        else:
+            await context.bot.send_document(
+                chat_id=agent["owner_id"],
+                document=io.BytesIO(data),
+                filename=filename,
+                caption=caption,
+                parse_mode="Markdown",
+            )
+    except Exception as e:
+        logger.debug(f"Failed to send file to {agent['owner_id']}: {e}")
+
+
 async def _poll_pending_messages(context) -> None:
     """Background job: poll all running agents for pending messages and forward to owners."""
     db: Database = context.application.bot_data["db"]
@@ -55,6 +95,15 @@ async def _poll_pending_messages(context) -> None:
                 content = msg.get("content", "")
                 if not content:
                     continue
+                source = msg.get("source", "")
+
+                # Handle file messages from subagents/heartbeat
+                if source.endswith("_file"):
+                    await _send_pending_file(
+                        context, agent, auth_token, content
+                    )
+                    continue
+
                 try:
                     await context.bot.send_message(
                         chat_id=agent["owner_id"],

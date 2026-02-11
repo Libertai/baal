@@ -11,8 +11,20 @@ from pathlib import Path
 
 import httpx
 
+from baal_agent.security import MAX_SEND_FILE_SIZE, PathSecurityError, validate_workspace_path
+
 MAX_TOOL_OUTPUT = 30_000
 MAX_WEB_CONTENT = 50_000
+
+# ── Workspace configuration ──────────────────────────────────────────
+
+_workspace_path: str | None = None
+
+
+def configure_tools(workspace_path: str) -> None:
+    """Set the workspace root for file-tool boundary checks."""
+    global _workspace_path
+    _workspace_path = workspace_path
 
 # ── Bash safety guards ────────────────────────────────────────────────
 
@@ -159,6 +171,27 @@ TOOL_DEFINITIONS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "send_file",
+            "description": "Send a file from the workspace to the user via Telegram.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Path to the file (relative to workspace or absolute within workspace).",
+                    },
+                    "caption": {
+                        "type": "string",
+                        "description": "Optional caption to send with the file.",
+                    },
+                },
+                "required": ["path"],
+            },
+        },
+    },
 ]
 
 # Optional web_search tool — only registered if BRAVE_API_KEY is set
@@ -283,12 +316,18 @@ async def _exec_read_file(args: dict) -> str:
     offset = args.get("offset", 1)
     limit = args.get("limit")
     try:
-        with open(path, "r", errors="replace") as f:
+        if _workspace_path:
+            resolved = validate_workspace_path(path, _workspace_path, must_exist=True)
+        else:
+            resolved = Path(path)
+        with open(resolved, "r", errors="replace") as f:
             lines = f.readlines()
         start = max(0, offset - 1)
         end = start + limit if limit else len(lines)
         numbered = [f"{i + start + 1}\t{line}" for i, line in enumerate(lines[start:end])]
         return _truncate("".join(numbered)) if numbered else "(empty file)"
+    except PathSecurityError as e:
+        return f"[error: {e}]"
     except FileNotFoundError:
         return f"[error: file not found: {path}]"
     except Exception as e:
@@ -303,10 +342,16 @@ async def _exec_write_file(args: dict) -> str:
     if content is None:
         return "[error: missing required 'content' parameter]"
     try:
-        Path(path).parent.mkdir(parents=True, exist_ok=True)
-        with open(path, "w") as f:
+        if _workspace_path:
+            resolved = validate_workspace_path(path, _workspace_path)
+        else:
+            resolved = Path(path)
+        resolved.parent.mkdir(parents=True, exist_ok=True)
+        with open(resolved, "w") as f:
             f.write(content)
         return f"Wrote {len(content)} bytes to {path}"
+    except PathSecurityError as e:
+        return f"[error: {e}]"
     except Exception as e:
         return f"[error: {e}]"
 
@@ -322,14 +367,20 @@ async def _exec_edit_file(args: dict) -> str:
     if new_string is None:
         return "[error: missing required 'new_string' parameter]"
     try:
-        with open(path, "r") as f:
+        if _workspace_path:
+            resolved = validate_workspace_path(path, _workspace_path, must_exist=True)
+        else:
+            resolved = Path(path)
+        with open(resolved, "r") as f:
             content = f.read()
         if old_string not in content:
             return f"[error: old_string not found in {path}]"
         content = content.replace(old_string, new_string, 1)
-        with open(path, "w") as f:
+        with open(resolved, "w") as f:
             f.write(content)
         return f"Edited {path}"
+    except PathSecurityError as e:
+        return f"[error: {e}]"
     except FileNotFoundError:
         return f"[error: file not found: {path}]"
     except Exception as e:
@@ -339,15 +390,20 @@ async def _exec_edit_file(args: dict) -> str:
 async def _exec_list_dir(args: dict) -> str:
     path = args.get("path", ".")
     try:
-        p = Path(path)
-        if not p.is_dir():
+        if _workspace_path:
+            resolved = validate_workspace_path(path, _workspace_path, must_exist=True)
+        else:
+            resolved = Path(path)
+        if not resolved.is_dir():
             return f"[error: not a directory: {path}]"
-        entries = sorted(p.iterdir(), key=lambda e: (not e.is_dir(), e.name.lower()))
+        entries = sorted(resolved.iterdir(), key=lambda e: (not e.is_dir(), e.name.lower()))
         lines = []
         for entry in entries:
             prefix = "[dir]" if entry.is_dir() else "[file]"
             lines.append(f"{prefix}  {entry.name}")
         return "\n".join(lines) if lines else "(empty directory)"
+    except PathSecurityError as e:
+        return f"[error: {e}]"
     except PermissionError:
         return f"[error: permission denied: {path}]"
     except Exception as e:
@@ -410,6 +466,28 @@ async def _exec_web_search(args: dict) -> str:
         return f"[error: {e}]"
 
 
+async def _exec_send_file(args: dict) -> str:
+    path = args.get("path")
+    caption = args.get("caption", "")
+    if not path:
+        return "[error: missing required 'path' parameter]"
+    if not _workspace_path:
+        return "[error: workspace not configured]"
+    try:
+        resolved = validate_workspace_path(
+            path, _workspace_path, must_exist=True, reject_sensitive=True
+        )
+        size = resolved.stat().st_size
+        if size > MAX_SEND_FILE_SIZE:
+            return f"[error: file too large ({size} bytes, max {MAX_SEND_FILE_SIZE})]"
+        rel = resolved.relative_to(Path(_workspace_path).resolve())
+        return f"__SEND_FILE__:{rel}:{caption}"
+    except PathSecurityError as e:
+        return f"[error: {e}]"
+    except Exception as e:
+        return f"[error: {e}]"
+
+
 # ── Tool registry ─────────────────────────────────────────────────────
 
 TOOL_HANDLERS: dict[str, callable] = {
@@ -420,6 +498,7 @@ TOOL_HANDLERS: dict[str, callable] = {
     "list_dir": _exec_list_dir,
     "web_fetch": _exec_web_fetch,
     "web_search": _exec_web_search,
+    "send_file": _exec_send_file,
 }
 
 
