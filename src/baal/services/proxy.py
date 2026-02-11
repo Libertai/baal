@@ -57,6 +57,8 @@ async def stream_messages(
                             if line.startswith("data: "):
                                 try:
                                     event = json.loads(line[6:])
+                                    if event.get("type") == "keepalive":
+                                        continue  # Swallow keepalive, don't forward
                                     got_any_event = True
                                     yield event
                                     if event.get("type") == "done":

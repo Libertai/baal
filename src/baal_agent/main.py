@@ -267,10 +267,10 @@ async def _heartbeat_loop():
 # complex tool-calling prompts, but prevents infinite hangs.
 _INFERENCE_TIMEOUT = 120  # seconds
 
-# Interval for SSE keepalive comments during long-running operations.
-# SSE comments (lines starting with ":") are ignored by parsers but
-# keep the TCP connection alive and prevent proxy read timeouts.
-_KEEPALIVE_INTERVAL = 30  # seconds
+# Interval for SSE keepalive events during long-running operations.
+# Sent as real data events (not SSE comments) so that reverse proxies
+# (like the CRN *.2n6.me gateway) actually forward them.
+_KEEPALIVE_INTERVAL = 15  # seconds
 
 
 def _sse_event(data: dict) -> str:
@@ -278,8 +278,8 @@ def _sse_event(data: dict) -> str:
 
 
 def _sse_keepalive() -> str:
-    """SSE comment to keep the connection alive."""
-    return ": keepalive\n\n"
+    """Real SSE data event to keep the connection alive through reverse proxies."""
+    return f"data: {json.dumps({'type': 'keepalive'})}\n\n"
 
 
 async def _with_keepalive(coro, queue: asyncio.Queue):
