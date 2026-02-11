@@ -235,7 +235,7 @@ async def soul_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         prompt_display = prompt if len(prompt) <= 800 else prompt[:797] + "..."
 
         await update.message.reply_text(
-            f"<b>{agent['name']}'s Personality</b>\n\n"
+            f"<b>{html_mod.escape(agent['name'])}'s Personality</b>\n\n"
             f"<code>{html_mod.escape(prompt_display)}</code>\n\n"
             f"This prompt shapes how your agent behaves and responds.",
             parse_mode=ParseMode.HTML,
@@ -285,7 +285,7 @@ async def soul_edit_start(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     context.user_data["soul_agent_name"] = agent["name"]
 
     await query.edit_message_text(
-        f"<b>Edit {agent['name']}'s Personality</b>\n\n"
+        f"<b>Edit {html_mod.escape(agent['name'])}'s Personality</b>\n\n"
         f"Current prompt:\n<code>{html_mod.escape(agent['system_prompt'][:500])}</code>\n\n"
         f"Send a new prompt, or /cancel to keep the current one.",
         parse_mode=ParseMode.HTML,
@@ -899,7 +899,8 @@ async def create_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     context.user_data["create_prompt"] = _default_system_prompt(name)
 
     # Build model selection (same as create_prompt used to do)
-    lines = [f"Great! Your agent will be called *{name}*\n\n*Step 2/2:* Choose a model:"]
+    safe_name = html_mod.escape(name)
+    lines = [f"Great! Your agent will be called <b>{safe_name}</b>\n\n<b>Step 2/2:</b> Choose a model:"]
     keyboard = []
 
     for model_id, info in AVAILABLE_MODELS.items():
@@ -910,7 +911,7 @@ async def create_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
             )
         ])
         lines.append(
-            f"\n*{info['emoji']} {info['name']}*\n"
+            f"\n<b>{info['emoji']} {info['name']}</b>\n"
             f"{info['description']}\n"
             f"• {info['best_for']}"
         )
@@ -918,7 +919,7 @@ async def create_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     await update.message.reply_text(
         "\n".join(lines),
         reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode="Markdown",
+        parse_mode=ParseMode.HTML,
     )
     return MODEL
 
@@ -1246,7 +1247,7 @@ async def _deploy_agent_fast(
         await bot.send_message(
             chat_id=chat_id,
             text=(
-                f"<b>{name} is ready!</b> (deployed in {duration}s)\n\n"
+                f"<b>{html_mod.escape(name)} is ready!</b> (deployed in {duration}s)\n\n"
                 f"You're now chatting with your agent.\n"
                 f"Just type a message to start!\n\n"
                 f"• /soul — customize personality\n"
