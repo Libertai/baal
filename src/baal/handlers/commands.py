@@ -162,10 +162,10 @@ async def verbose_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     await update.message.reply_text(f"Tool visibility: {state}")
 
 
-# ── /pool (admin) ──────────────────────────────────────────────────────
+# ── /pool ──────────────────────────────────────────────────────────────
 
 async def pool_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Show VM pool status (admin only)."""
+    """Show VM pool status."""
     pool = context.bot_data.get("vm_pool")
     if not pool:
         await update.message.reply_text("VM pool is not enabled.")
@@ -174,17 +174,17 @@ async def pool_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     stats = await pool.get_stats()
 
     text = (
-        "**VM Pool Status**\n\n"
-        f"🟢 Available: {stats.get('warm', 0)}\n"
-        f"🔄 Provisioning: {stats.get('provisioning', 0)}\n"
-        f"🔒 Claimed: {stats.get('claimed', 0)}\n"
-        f"🚀 Deployed: {stats.get('deployed', 0)}\n"
-        f"❌ Failed: {stats.get('failed', 0)}\n"
-        f"━━━━━━━━━━━━━\n"
+        "<b>VM Pool Status</b>\n\n"
+        f"Available: {stats.get('warm', 0)}\n"
+        f"Provisioning: {stats.get('provisioning', 0)}\n"
+        f"Claimed: {stats.get('claimed', 0)}\n"
+        f"Deployed: {stats.get('deployed', 0)}\n"
+        f"Failed: {stats.get('failed', 0)}\n"
+        f"─────────────\n"
         f"Total: {stats.get('total', 0)}"
     )
 
-    await update.message.reply_text(text, parse_mode="Markdown")
+    await update.message.reply_text(text, parse_mode=ParseMode.HTML)
 
 
 # ── /manage ────────────────────────────────────────────────────────────
@@ -850,7 +850,7 @@ async def create_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if pooled_vm:
         # Fast path: Deploy to pre-provisioned VM (~10-15 seconds)
         await update.message.reply_text(
-            f"⚡ Agent \"{name}\" created (ID: {agent['id']}).\n"
+            f"Agent \"{name}\" created (ID: {agent['id']}).\n"
             f"Deploying to pre-provisioned VM... This takes ~15 seconds."
         )
 
@@ -925,7 +925,6 @@ async def _deploy_agent_fast(
     """Deploy agent to a pre-provisioned VM from the pool (~10-15 seconds)."""
     import time as _time
 
-    from baal.services.pool_manager import PooledVM
     from .error_handlers import send_deployment_error
 
     db: Database = application.bot_data["db"]
@@ -997,7 +996,7 @@ async def _deploy_agent_fast(
         await bot.send_message(
             chat_id=chat_id,
             text=(
-                f"⚡ *Your agent is ready!*\n\n"
+                f"*Your agent is ready!*\n\n"
                 f"Deployed in {duration} seconds.\n"
                 f"Click here to start chatting:\n{deep_link}"
             ),

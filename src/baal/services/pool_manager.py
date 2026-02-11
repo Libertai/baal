@@ -91,10 +91,23 @@ class VMPool:
                 -- status: 'provisioning', 'warm', 'claimed', 'deployed', 'failed'
             )
         """)
-        await self._db.execute(
-            "CREATE UNIQUE INDEX IF NOT EXISTS idx_pool_hash ON vm_pool(instance_hash)"
-        )
+        # Partial unique index: only enforce uniqueness for non-placeholder hashes
+        await self._db.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_pool_hash 
+            ON vm_pool(instance_hash) WHERE instance_hash != 'pending'
+        """)
         await self._db.commit()
+        # Recover from unclean shutdown: release any orphaned 'claimed' VMs
+        await self._db.execute("""
+            UPDATE vm_pool SET status = 'warm', claimed_at = NULL, agent_id = NULL
+            WHERE status = 'claimed'
+        """)
+        # Clean up any stuck 'provisioning' entries from previous run
+        await self._db.execute("""
+            DELETE FROM vm_pool WHERE status = 'provisioning'
+        """)
+        await self._db.commit()
+
         logger.info(f"VM pool initialized (min={self.min_size}, max={self.max_size})")
 
     async def close(self) -> None:
@@ -235,12 +248,18 @@ class VMPool:
             f"Pool needs {to_create} VMs (available={available}, provisioning={provisioning})"
         )
 
-        # Provision sequentially to avoid hammering CRNs
-        for _ in range(to_create):
-            try:
+        # Provision with limited concurrency (2-3 at a time)
+        semaphore = asyncio.Semaphore(2)
+
+        async def provision_with_limit():
+            async with semaphore:
                 await self._provision_one()
-            except Exception as e:
-                logger.error(f"Provision failed: {e}")
+
+        tasks = [provision_with_limit() for _ in range(to_create)]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        for r in results:
+            if isinstance(r, Exception):
+                logger.error(f"Provision failed: {r}")
 
     async def _provision_one(self) -> None:
         """Provision a single VM and add to pool."""
@@ -304,22 +323,43 @@ class VMPool:
     # ── Cleanup ───────────────────────────────────────────────────────
 
     async def _cleanup_stale(self) -> None:
-        """Remove warm VMs older than max_age_hours (cost control)."""
+        """Remove stale VMs (cost control + orphan recovery)."""
+        # Clean up warm VMs older than max_age_hours
         async with self._db.execute("""
             SELECT id, instance_hash FROM vm_pool
             WHERE status = 'warm'
-            AND datetime(created_at) < datetime('now', ?)
+            AND datetime(created_at) < datetime('now', ?, 'utc')
         """, (f'-{self.max_age_hours} hours',)) as cursor:
             rows = await cursor.fetchall()
 
         for row in rows:
-            logger.info(f"Cleaning up stale pool VM {row['instance_hash'][:12]}...")
+            logger.info(f"Cleaning up stale warm VM {row['instance_hash'][:12]}...")
             await self.remove(row["id"], destroy_vm=True)
 
-        # Also clean up failed provisions
+        # Clean up failed provisions (1 hour)
         await self._db.execute("""
             DELETE FROM vm_pool
             WHERE status = 'failed'
-            AND datetime(created_at) < datetime('now', '-1 hour')
+            AND datetime(created_at) < datetime('now', '-1 hour', 'utc')
         """)
+
+        # Clean up orphaned 'provisioning' entries (stuck for >30 min = likely dead)
+        await self._db.execute("""
+            DELETE FROM vm_pool
+            WHERE status = 'provisioning'
+            AND datetime(created_at) < datetime('now', '-30 minutes', 'utc')
+        """)
+
+        # Clean up orphaned 'claimed' entries (stuck for >10 min = deployment abandoned)
+        async with self._db.execute("""
+            SELECT id, instance_hash FROM vm_pool
+            WHERE status = 'claimed'
+            AND datetime(claimed_at) < datetime('now', '-10 minutes', 'utc')
+        """) as cursor:
+            orphaned = await cursor.fetchall()
+
+        for row in orphaned:
+            logger.warning(f"Releasing orphaned claimed VM {row['instance_hash'][:12]}...")
+            await self.release(row["id"])
+
         await self._db.commit()
