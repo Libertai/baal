@@ -43,9 +43,10 @@ src/baal/
 src/baal_agent/
   main.py              # FastAPI app: POST /chat, DELETE /chat/{id}, GET /pending, GET /health
                        # Heartbeat loop, subagent spawning, reusable _run_agent_turn()
-  config.py            # AgentSettings (workspace_path, owner_chat_id, heartbeat_interval)
-  context.py           # Context builder: assembles system prompt from memory + skills + identity
-  database.py          # SQLite: conversation history + pending_messages table
+  config.py            # AgentSettings (workspace_path, owner_chat_id, heartbeat_interval, context budget)
+  compaction.py        # Token-aware context management: estimate_tokens(), maybe_compact()
+  context.py           # Context builder: assembles system prompt from memory + skills + identity (date-only timestamp for prefix caching)
+  database.py          # SQLite: conversation history + pending_messages + compact_history()
   inference.py         # AsyncOpenAI wrapper for LibertAI
   tools.py             # Tool definitions + executors: bash (with safety guards), read/write/edit_file,
                        # list_dir, web_fetch, web_search (optional), spawn
@@ -79,6 +80,8 @@ All config via `.env` (see `.env.example`). Key vars: `TELEGRAM_BOT_TOKEN`, `LIB
 
 Agent-specific vars (written to VM `.env` by deployer): `AGENT_NAME`, `SYSTEM_PROMPT`, `MODEL`, `AGENT_SECRET`, `WORKSPACE_PATH`, `OWNER_CHAT_ID`, `HEARTBEAT_INTERVAL`.
 
+Context budget vars (optional, have sensible defaults): `MAX_CONTEXT_TOKENS` (0=auto-detect from model), `GENERATION_RESERVE` (4096), `COMPACTION_KEEP_MESSAGES` (20).
+
 Optional: `BRAVE_API_KEY` enables the `web_search` tool (Brave Search API).
 
 Project has its own SSH keypair at `.ssh/id_ed25519` (gitignored).
@@ -96,7 +99,8 @@ Project has its own SSH keypair at `.ssh/id_ed25519` (gitignored).
 
 ### Agent-side
 
-- **Context builder** (`context.py`): `build_system_prompt()` assembles identity + user instructions + memory + skills summary + memory system instructions
+- **Context builder** (`context.py`): `build_system_prompt()` assembles identity + user instructions + memory + skills summary + memory system instructions. Uses date-only timestamp (`%Y-%m-%d`) to keep the system prompt stable across turns for vLLM prefix caching.
+- **Context compaction** (`compaction.py`): Token-aware history management. `maybe_compact()` estimates token usage (chars/4 heuristic), and when over budget summarizes old messages via an LLM call (reusing the cached system prompt prefix), replaces them with a user+assistant summary pair in the DB, keeps recent messages intact. Model context sizes: qwen3-coder-next=98K, glm-4.7=128K.
 - **Memory system**: File-based persistent memory at `workspace/memory/MEMORY.md` (long-term) + `workspace/memory/YYYY-MM-DD.md` (daily notes). Agent reads/writes via file tools.
 - **Skills system**: Markdown files at `workspace/skills/*/SKILL.md`. Summaries loaded into context; full content read on-demand by agent.
 - **Bash safety guards**: Regex deny patterns block dangerous commands (`rm -rf /`, `shutdown`, fork bombs, `systemctl stop baal-agent`, etc.) before execution
@@ -105,6 +109,7 @@ Project has its own SSH keypair at `.ssh/id_ed25519` (gitignored).
 - **Subagent spawning**: `spawn` tool creates background `asyncio.Task` running `_run_agent_turn()` with restricted tools (no spawn). Results stored in `pending_messages` table.
 - **Pending messages**: `pending_messages` SQLite table + `GET /pending` endpoint. Heartbeat and subagent results queued here for bot to poll.
 - **SSE error handling**: `/chat` stream wraps agentic loop in try/except, yields `{"type": "error"}` events on failure
+- **History compaction in DB** (`database.py`): `compact_history()` deletes old messages, inserts a summary user+assistant pair with timestamps ordered before the kept messages. Compaction only runs at the start of a turn, not mid-loop.
 
 ### Tools
 
