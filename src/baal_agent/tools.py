@@ -40,6 +40,17 @@ BASH_DENY_PATTERNS = [
         r":\(\)\s*\{.*\};\s*:",
         r"\bsystemctl\s+(stop|disable)\s+baal-agent\b",
         r"\bkill\s+-9\s+1\b",
+        # Block environment variable dumps (exposes secrets)
+        r"^\s*(env|printenv|set)\s*$",  # Bare commands
+        r"\b(env|printenv)\b",           # env/printenv anywhere
+        r"\bset\s*\|",                   # set piped (dumps vars)
+        r"/proc/\d+/environ",            # /proc/<pid>/environ
+        r"/proc/self/environ",           # /proc/self/environ
+        r"\bexport\s+-p\b",              # export -p dumps all
+        r"\bdeclare\s+-x\b",             # declare -x dumps exports
+        # Block reading sensitive files via bash
+        r"\.env\b",                      # Any .env file access
+        r"/run/secrets",                 # Secrets directory
     ]
 ]
 
