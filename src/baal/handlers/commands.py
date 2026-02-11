@@ -190,12 +190,30 @@ async def pool_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 # ── /manage ────────────────────────────────────────────────────────────
 
 async def manage_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Exit chat mode."""
+    """Exit chat mode and show navigation options."""
     agent_id = context.user_data.pop("current_agent_id", None)
+
+    keyboard = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("📋 My Agents", callback_data="quick_list"),
+            InlineKeyboardButton("➕ Create New", callback_data="quick_create"),
+        ],
+        [
+            InlineKeyboardButton("⚙️ Account", callback_data="quick_account"),
+            InlineKeyboardButton("❓ Help", callback_data="quick_help"),
+        ],
+    ])
+
     if agent_id:
-        await update.message.reply_text("Left agent chat. You're back in the control plane.")
+        await update.message.reply_text(
+            "Left agent chat.\n\nWhat would you like to do?",
+            reply_markup=keyboard,
+        )
     else:
-        await update.message.reply_text("You're already in the control plane.")
+        await update.message.reply_text(
+            "You're in the control plane.\n\nWhat would you like to do?",
+            reply_markup=keyboard,
+        )
 
 
 # ── /list ──────────────────────────────────────────────────────────────
