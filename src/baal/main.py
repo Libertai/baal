@@ -33,12 +33,59 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+async def _poll_pending_messages(context) -> None:
+    """Background job: poll all running agents for pending messages and forward to owners."""
+    db: Database = context.application.bot_data["db"]
+    settings: Settings = context.application.bot_data["settings"]
+    encryption_key = settings.bot_encryption_key
+
+    try:
+        agents = await db.list_running_agents()
+    except Exception:
+        return
+
+    for agent in agents:
+        try:
+            from baal.services.encryption import decrypt
+            from baal.services.proxy import get_pending_messages
+
+            auth_token = decrypt(agent["auth_token"], encryption_key)
+            pending = await get_pending_messages(agent["vm_url"], auth_token)
+            for msg in pending:
+                content = msg.get("content", "")
+                if not content:
+                    continue
+                try:
+                    await context.bot.send_message(
+                        chat_id=agent["owner_id"],
+                        text=f"*{agent['name']}*: {content}",
+                        parse_mode="Markdown",
+                    )
+                except Exception:
+                    # Fallback to plain text if Markdown fails
+                    try:
+                        await context.bot.send_message(
+                            chat_id=agent["owner_id"],
+                            text=f"{agent['name']}: {content}",
+                        )
+                    except Exception:
+                        pass
+        except Exception as e:
+            logger.debug(f"Pending poll failed for agent {agent['id']}: {e}")
+
+
 async def post_init(application: Application) -> None:
     settings: Settings = application.bot_data["settings"]
     db = Database(db_path=settings.db_path)
     await db.initialize()
     application.bot_data["db"] = db
     application.bot_data["rate_limiter"].db = db
+
+    # Poll all agents for pending messages every 30 seconds
+    application.job_queue.run_repeating(
+        _poll_pending_messages, interval=30, first=10
+    )
+
     logger.info("Database initialized")
 
 

@@ -159,6 +159,12 @@ class Database:
             (owner_id,),
         )
 
+    async def list_running_agents(self) -> list[dict]:
+        """Return all running agents across all users (for pending message polling)."""
+        return await self.fetch_all(
+            "SELECT * FROM agents WHERE is_active = 1 AND deployment_status = 'running' AND vm_url IS NOT NULL AND auth_token IS NOT NULL ORDER BY id",
+        )
+
     async def update_agent_deployment(
         self,
         agent_id: int,
