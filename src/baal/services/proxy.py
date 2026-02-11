@@ -175,3 +175,27 @@ async def get_pending_messages(agent_url: str, auth_token: str) -> list[dict]:
     except (httpx.ConnectError, httpx.TimeoutException, httpx.RemoteProtocolError) as e:
         logger.debug(f"Failed to fetch pending messages: {e}")
         return []
+
+
+async def send_chat_message(
+    agent_url: str, auth_token: str, message: str, chat_id: str
+) -> str | None:
+    """Send a message to an agent and return the full response (non-streaming).
+
+    Used for automated messages like intro prompts where we don't need streaming.
+    Returns the concatenated text response, or None on failure.
+    """
+    try:
+        chunks = []
+        async for event in stream_messages(agent_url, auth_token, message, chat_id):
+            if event.get("type") == "text":
+                chunks.append(event.get("content", ""))
+            elif event.get("type") == "done":
+                break
+            elif event.get("type") == "error":
+                logger.warning(f"Agent error: {event.get('content')}")
+                break
+        return "".join(chunks) if chunks else None
+    except Exception as e:
+        logger.warning(f"send_chat_message failed: {e}")
+        return None

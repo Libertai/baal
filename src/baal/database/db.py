@@ -203,6 +203,33 @@ class Database:
         )
         await self.db.commit()
 
+    async def update_agent(
+        self,
+        agent_id: int,
+        *,
+        name: str | None = None,
+        system_prompt: str | None = None,
+        model: str | None = None,
+    ) -> None:
+        """Update agent configuration (name, prompt, model)."""
+        now = datetime.now(timezone.utc).isoformat()
+        sets: list[str] = ["updated_at = ?"]
+        params: list = [now]
+        if name is not None:
+            sets.append("name = ?")
+            params.append(name)
+        if system_prompt is not None:
+            sets.append("system_prompt = ?")
+            params.append(system_prompt)
+        if model is not None:
+            sets.append("model = ?")
+            params.append(model)
+        params.append(agent_id)
+        await self.db.execute(
+            f"UPDATE agents SET {', '.join(sets)} WHERE id = ?", tuple(params)
+        )
+        await self.db.commit()
+
     async def delete_agent(self, agent_id: int) -> None:
         now = datetime.now(timezone.utc).isoformat()
         await self.db.execute(
