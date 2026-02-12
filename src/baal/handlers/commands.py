@@ -1258,6 +1258,10 @@ async def _deploy_agent_fast(
             reply_markup=keyboard,
         )
 
+        # Wait for uvicorn to start before sending intro
+        import asyncio as _asyncio
+        await _asyncio.sleep(5)
+
         # Trigger agent's intro message
         from baal.services.proxy import send_chat_message
         try:
