@@ -1,72 +1,156 @@
-# Baal
+# Baal / LiberClaw
 
-Telegram bot platform for creating and deploying AI agents on [Aleph Cloud](https://aleph.cloud) with [LibertAI](https://libertai.io) inference.
+Platform for creating and deploying AI agents on [Aleph Cloud](https://aleph.cloud) with [LibertAI](https://libertai.io) inference. Two frontends — a Telegram bot (Baal) and a web/mobile app (LiberClaw) — share the same agent infrastructure.
 
 ## Architecture
 
-Two components in one repo:
+```
+Expo App (web/iOS/Android)          Telegram Bot
+         |                                |
+         v                                v
+   LiberClaw API (FastAPI)       Baal Bot (python-telegram-bot)
+         |                                |
+         +------ baal_core (shared) ------+
+         |   deployer, proxy, encryption  |
+         |   pool_manager, models         |
+         v                                v
+           Agent VMs (baal-agent on Aleph Cloud)
+                      |
+                      v
+              LibertAI API (inference)
+```
 
-- **baal** (`src/baal/`) — Telegram bot: control plane, message proxy, VM manager
-- **baal-agent** (`src/baal_agent/`) — FastAPI agent deployed to each Aleph Cloud VM
+Four packages in one monorepo:
 
-Flow: User creates agent via `/create` wizard -> bot provisions Aleph Cloud VM (credit PAYG) -> deploys agent code via tar-over-SSH -> Caddy provides HTTPS via `*.2n6.me` -> deep link `t.me/baal_bot?start=agent_N` routes chat through bot to agent VM.
+| Package | Location | Description |
+|---------|----------|-------------|
+| **baal_core** | `src/baal_core/` | Shared infrastructure: deployer, proxy, encryption, pool manager, models |
+| **baal** | `src/baal/` | Telegram bot: control plane, message proxy, VM manager |
+| **baal-agent** | `src/baal_agent/` | FastAPI agent deployed to each Aleph Cloud VM |
+| **liberclaw** | `src/liberclaw/` | FastAPI web API: auth, agent CRUD, chat proxy, usage tracking |
+
+Expo app (TypeScript/React Native) at `apps/liberclaw/`.
 
 ## Tech Stack
 
+**Python (backend)**:
 - Python 3.12+, managed with `uv`
-- `python-telegram-bot[ext]` — async Telegram bot framework
-- `aleph-sdk-python` — Aleph Cloud instance creation (credit-based payment)
-- `openai` — LibertAI client (OpenAI-compatible API at `https://api.libertai.io/v1`)
-- `fastapi` + `uvicorn` — agent HTTP server
-- `aiosqlite` — async SQLite (WAL mode) for both bot and agent
+- `fastapi` + `uvicorn` — API servers (liberclaw + baal-agent)
+- `sqlalchemy[asyncio]` + `asyncpg` + `alembic` — PostgreSQL ORM + migrations (liberclaw)
+- `aiosqlite` — SQLite (bot + agent)
+- `python-telegram-bot[ext]` — Telegram bot framework
+- `aleph-sdk-python` — Aleph Cloud VM provisioning
+- `openai` — LibertAI client (OpenAI-compatible)
+- `httpx` — HTTP proxy, SSE streaming
+- `cryptography` — Fernet encryption
+- `python-jose` — JWT tokens
+- `authlib` — OAuth (Google/GitHub)
+- `itsdangerous` — magic link tokens
+- `web3` — wallet signature verification
 - `pydantic-settings` — config from `.env`
-- `httpx` — HTTP proxy (bot -> agent VMs), web_fetch tool
-- `cryptography` — Fernet encryption for API keys and auth tokens
+
+**TypeScript (frontend)**:
+- Expo SDK 52 + Expo Router (file-based routing)
+- NativeWind v4 (Tailwind CSS for React Native)
+- TanStack Query (server state)
+- Zustand (client state)
+- SSE streaming via fetch ReadableStream
 
 ## Project Layout
 
 ```
+src/baal_core/
+  deployer.py          # AlephDeployer: CRN discovery, instance creation, SSH deployment, Caddy
+  proxy.py             # HTTP proxy: stream_messages(), health_check(), get_pending_messages()
+  encryption.py        # Fernet encrypt/decrypt
+  pool_manager.py      # VMPool: warm VM pool for instant deployment
+  models.py            # Shared constants: AVAILABLE_MODELS, DEFAULT_MODEL, VMInfo, DeploymentResult
+
 src/baal/
-  main.py              # Entry point: wire handlers, post_init/post_shutdown, run_polling()
-  config.py            # Settings via pydantic-settings (env_file=".env")
-  database/db.py       # SQLite tables: users, agents, daily_usage
+  main.py              # Bot entry point: handlers, post_init/post_shutdown, run_polling()
+  config.py            # Settings (env_file=".env")
+  database/db.py       # SQLite: users, agents, daily_usage
   handlers/
-    commands.py        # /start, /help, /create wizard (ConversationHandler), /list, /delete, /manage
-    chat.py            # Message routing + proxy to agent VMs, rate limiting, pending message forwarding
+    commands.py        # /start, /help, /create wizard, /list, /delete, /manage
+    chat.py            # Message routing + proxy to agent VMs
     account.py         # /login, /logout, /account
-  services/
-    deployer.py        # AlephDeployer: CRN discovery, instance creation, tar-over-SSH deployment, Caddy setup
-    proxy.py           # HTTP proxy: stream_messages(), health_check(), get_pending_messages()
-    encryption.py      # Fernet encrypt/decrypt
-    rate_limiter.py    # Per-user daily message limits
+  services/            # Re-export stubs → baal_core.*
 
 src/baal_agent/
-  main.py              # FastAPI app: POST /chat, DELETE /chat/{id}, GET /pending, GET /health
-                       # Heartbeat loop, subagent spawning, reusable _run_agent_turn()
-  config.py            # AgentSettings (workspace_path, owner_chat_id, heartbeat_interval, context budget)
-  compaction.py        # Token-aware context management: estimate_tokens(), maybe_compact()
-  context.py           # Context builder: assembles system prompt from memory + skills + identity (date-only timestamp for prefix caching)
-  database.py          # SQLite: conversation history + pending_messages + compact_history()
+  main.py              # FastAPI: POST /chat, DELETE /chat/{id}, GET /pending, GET /health
+  config.py            # AgentSettings
+  compaction.py        # Token-aware context management
+  context.py           # System prompt builder (memory + skills + identity)
+  database.py          # SQLite: conversation history + pending_messages
   inference.py         # AsyncOpenAI wrapper for LibertAI
-  tools.py             # Tool definitions + executors: bash (with safety guards), read/write/edit_file,
-                       # list_dir, web_fetch, web_search (optional), spawn
+  tools.py             # bash, read/write/edit_file, list_dir, web_fetch, web_search, spawn
   workspace/           # Template files deployed to each VM
-    memory/
-      MEMORY.md        # Agent's persistent long-term memory
-    skills/
-      web-research/SKILL.md
-      memory-management/SKILL.md
-      weather/SKILL.md
+
+src/liberclaw/
+  main.py              # FastAPI app with lifespan, CORS, router mounting
+  config.py            # LiberClawSettings (env_prefix=LIBERCLAW_)
+  database/
+    models.py          # SQLAlchemy ORM: User, Agent, Session, ApiKey, etc. (12 tables)
+    session.py         # Async engine + session factory
+    migrations/        # Alembic (PostgreSQL)
+  auth/
+    dependencies.py    # get_current_user, get_optional_user (FastAPI Depends)
+    jwt.py             # Access/refresh token creation + validation (HS256)
+    magic_link.py      # Token generation + verification (itsdangerous)
+    oauth.py           # Google + GitHub OAuth (authlib)
+    wallet.py          # Web3 wallet challenge-response
+  routers/
+    auth.py            # /api/v1/auth/* — login, OAuth, wallet, refresh, logout
+    agents.py          # /api/v1/agents/* — CRUD, deploy, health, repair, redeploy
+    chat.py            # /api/v1/chat/* — SSE streaming proxy, history clear, pending
+    files.py           # /api/v1/files/* — proxy downloads from agent VMs
+    users.py           # /api/v1/users/* — profile, connections, API keys
+    usage.py           # /api/v1/usage/* — stats, history
+    health.py          # /api/v1/health
+  services/
+    agent_manager.py   # Agent CRUD + deployment orchestration (uses baal_core.deployer)
+    chat_proxy.py      # SSE streaming proxy (uses baal_core.proxy)
+    email.py           # Magic link emails (Resend)
+    usage_tracker.py   # Daily usage tracking + quota enforcement
+  schemas/             # Pydantic request/response models
+
+apps/liberclaw/
+  app/                 # Expo Router screens
+    (auth)/            # Login, magic link verification
+    (tabs)/            # Agents dashboard, chat, settings
+    agent/             # Create, detail, chat, edit
+  components/          # UI, chat, agent, auth, layout components
+  lib/
+    api/               # HTTP client, typed API calls, SSE streaming
+    auth/              # AuthProvider, secure token storage
+    hooks/             # useAgents, useChat, useSSE, useDeployment
+    store/             # Zustand: chat messages, preferences
 ```
 
 ## Running
 
+### Telegram Bot
 ```bash
 uv pip install -e ".[bot]"
 python -m baal.main
 ```
 
-Agent (local testing):
+### LiberClaw API
+```bash
+uv pip install -e ".[api]"
+docker compose up -d                    # PostgreSQL on port 5433
+alembic upgrade head                    # Run migrations
+uvicorn liberclaw.main:app --reload     # http://localhost:8000
+```
+
+### Expo App
+```bash
+cd apps/liberclaw
+npm install
+npx expo start                          # http://localhost:8081
+```
+
+### Agent (local testing)
 ```bash
 uv pip install -e ".[agent]"
 AGENT_NAME=test SYSTEM_PROMPT="Be helpful" MODEL=qwen3-coder-next \
@@ -76,42 +160,52 @@ AGENT_NAME=test SYSTEM_PROMPT="Be helpful" MODEL=qwen3-coder-next \
 
 ## Configuration
 
-All config via `.env` (see `.env.example`). Key vars: `TELEGRAM_BOT_TOKEN`, `LIBERTAI_API_KEY`, `ALEPH_PRIVATE_KEY`, `ALEPH_SSH_PUBKEY`, `ALEPH_SSH_PRIVKEY_PATH`, `BOT_ENCRYPTION_KEY`.
+All config via `.env`. Bot vars are unprefixed, LiberClaw vars use `LIBERCLAW_` prefix.
 
-Agent-specific vars (written to VM `.env` by deployer): `AGENT_NAME`, `SYSTEM_PROMPT`, `MODEL`, `AGENT_SECRET`, `WORKSPACE_PATH`, `OWNER_CHAT_ID`, `HEARTBEAT_INTERVAL`.
+### Bot vars
+`TELEGRAM_BOT_TOKEN`, `LIBERTAI_API_KEY`, `ALEPH_PRIVATE_KEY`, `ALEPH_SSH_PUBKEY`, `ALEPH_SSH_PRIVKEY_PATH`, `BOT_ENCRYPTION_KEY`
 
-Context budget vars (optional, have sensible defaults): `MAX_CONTEXT_TOKENS` (0=auto-detect from model), `GENERATION_RESERVE` (4096), `COMPACTION_KEEP_MESSAGES` (20).
+### LiberClaw vars
+`LIBERCLAW_DATABASE_URL`, `LIBERCLAW_JWT_SECRET`, `LIBERCLAW_ENCRYPTION_KEY`, `LIBERCLAW_MAGIC_LINK_SECRET`, `LIBERCLAW_RESEND_API_KEY`, `LIBERCLAW_GOOGLE_CLIENT_ID/SECRET`, `LIBERCLAW_GITHUB_CLIENT_ID/SECRET`, `LIBERCLAW_FRONTEND_URL`, `LIBERCLAW_CORS_ORIGINS`
 
-Optional: `BRAVE_API_KEY` enables the `web_search` tool (Brave Search API).
+### Agent vars (written to VM `.env` by deployer)
+`AGENT_NAME`, `SYSTEM_PROMPT`, `MODEL`, `AGENT_SECRET`, `WORKSPACE_PATH`, `OWNER_CHAT_ID`, `HEARTBEAT_INTERVAL`
 
-Project has its own SSH keypair at `.ssh/id_ed25519` (gitignored).
+Optional: `BRAVE_API_KEY` enables the `web_search` tool. Project SSH keypair at `.ssh/id_ed25519` (gitignored).
 
 ## Key Patterns
 
-### Bot-side
+### Shared Core (baal_core)
+
+- **AlephDeployer**: CRN discovery (scored by load), instance creation with retry (up to 5 CRNs), tar-over-SSH deployment, Caddy HTTPS setup. Blacklists failed CRNs for 10 min.
+- **VMPool**: Maintains warm pre-provisioned VMs for instant deployment. Background replenisher keeps pool at min_size. Statuses: provisioning → warm → claimed → deployed.
+- **Proxy**: SSE streaming with retry, health checks, file downloads, pending message polling.
+
+### Bot (baal)
 
 - **Shared state via `bot_data`**: `db`, `deployer`, `settings`, `rate_limiter` stored in `context.bot_data` dict
-- **ConversationHandler** for `/create` wizard: NAME -> PROMPT -> MODEL (callback query) -> CONFIRM. `per_message=False`.
-- **Background deployment**: `_deploy_agent_background()` runs as `context.application.create_task()`, sends Telegram status messages as it progresses
-- **Bot-to-agent auth**: per-agent `secrets.token_urlsafe(32)` stored encrypted (Fernet), sent as `Authorization: Bearer` header, validated by agent middleware with `secrets.compare_digest`
-- **Tar-over-SSH deployment**: `_ssh_pipe_tar()` pipes `tar czf` through SSH to deploy the entire `src/baal_agent/` package (including workspace templates) — no inline code duplication
-- **Pending message forwarding**: After each chat stream, bot checks `GET /pending` on the agent for heartbeat/subagent results
+- **ConversationHandler** for `/create` wizard: NAME → PROMPT → MODEL → CONFIRM. `per_message=False`.
+- **Background deployment**: runs as `context.application.create_task()`, sends Telegram status updates
+- **Bot-to-agent auth**: per-agent `secrets.token_urlsafe(32)` encrypted with Fernet, sent as `Authorization: Bearer`
+- **Re-export stubs**: `src/baal/services/*.py` re-export from `baal_core` for backward compatibility
 
-### Agent-side
+### LiberClaw API (liberclaw)
 
-- **Context builder** (`context.py`): `build_system_prompt()` assembles identity + user instructions + memory + skills summary + memory system instructions. Uses date-only timestamp (`%Y-%m-%d`) to keep the system prompt stable across turns for vLLM prefix caching.
-- **Context compaction** (`compaction.py`): Token-aware history management. `maybe_compact()` estimates token usage (chars/4 heuristic), and when over budget summarizes old messages via an LLM call (reusing the cached system prompt prefix), replaces them with a user+assistant summary pair in the DB, keeps recent messages intact. Model context sizes: qwen3-coder-next=98K, glm-4.7=128K.
-- **Memory system**: File-based persistent memory at `workspace/memory/MEMORY.md` (long-term) + `workspace/memory/YYYY-MM-DD.md` (daily notes). Agent reads/writes via file tools.
-- **Skills system**: Markdown files at `workspace/skills/*/SKILL.md`. Summaries loaded into context; full content read on-demand by agent.
-- **Bash safety guards**: Regex deny patterns block dangerous commands (`rm -rf /`, `shutdown`, fork bombs, `systemctl stop baal-agent`, etc.) before execution
-- **Reusable agentic loop**: `_run_agent_turn()` handles message -> tool loop -> response. Used by `/chat` endpoint, heartbeat, and subagents.
-- **Heartbeat service**: Background asyncio task runs every `heartbeat_interval` seconds. Reads `workspace/HEARTBEAT.md`, runs agent if actionable content found, stores results as pending messages.
-- **Subagent spawning**: `spawn` tool creates background `asyncio.Task` running `_run_agent_turn()` with restricted tools (no spawn). Results stored in `pending_messages` table.
-- **Pending messages**: `pending_messages` SQLite table + `GET /pending` endpoint. Heartbeat and subagent results queued here for bot to poll.
-- **SSE error handling**: `/chat` stream wraps agentic loop in try/except, yields `{"type": "error"}` events on failure
-- **History compaction in DB** (`database.py`): `compact_history()` deletes old messages, inserts a summary user+assistant pair with timestamps ordered before the kept messages. Compaction only runs at the start of a turn, not mid-loop.
+- **Auth**: JWT HS256 (15-min access, 30-day refresh with rotation), magic links (itsdangerous, SHA-256 hash in DB), Google/GitHub OAuth (authlib), Web3 wallet (challenge-response with ecrecover). Account linking by email.
+- **Agent deployment**: Background tasks via `asyncio.create_task()`, status polling endpoint for frontend progress tracking
+- **Chat streaming**: SSE-over-POST proxy. Translates JWT auth to per-agent Bearer tokens, forwards events verbatim. Event types: text, tool_use, file, error, done, keepalive.
+- **Database**: PostgreSQL via SQLAlchemy async ORM. 12 tables. Alembic for migrations.
 
-### Tools
+### Agent (baal_agent)
+
+- **Context builder**: Assembles system prompt from identity + memory + skills. Date-only timestamp for vLLM prefix caching.
+- **Context compaction**: Token-aware (chars/4 heuristic). Summarizes old messages via LLM, keeps recent intact.
+- **Memory system**: File-based at `workspace/memory/MEMORY.md` (long-term) + daily notes.
+- **Skills system**: Markdown files at `workspace/skills/*/SKILL.md`. Summaries in context, full on-demand.
+- **Bash safety guards**: Regex deny patterns block dangerous commands before execution.
+- **Heartbeat + subagents**: Background tasks, results queued as pending messages.
+
+### Agent Tools
 
 | Tool | Description |
 |------|-------------|
@@ -123,13 +217,6 @@ Project has its own SSH keypair at `.ssh/id_ed25519` (gitignored).
 | `web_fetch` | Fetch URL, strip HTML, truncate at 50K chars |
 | `web_search` | Brave Search API (only if `BRAVE_API_KEY` set) |
 | `spawn` | Background subagent (restricted tools, max 15 iterations) |
-
-## Reference Repos
-
-Patterns were lifted from:
-- **nanobot** (`/home/jon/repos/nanobot/`) — context builder, memory system, skills, heartbeat, subagents, bash safety, web tools
-- **libertai-telegram-agent** (`/home/jon/repos/libertai-telegram-agent/`) — bot wiring, DB layer, inference, handlers, rate limiter, encryption
-- **aleph-marketplace** (`/home/jon/repos/aleph-marketplace/`) — Aleph Cloud deployer, CRN discovery, SSH executor, Caddy setup
 
 ## Available Models
 
