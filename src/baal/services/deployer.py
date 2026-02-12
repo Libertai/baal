@@ -630,8 +630,8 @@ class AlephDeployer:
     ) -> dict:
         """Pre-install all dependencies on a blank VM (Python, Caddy, dirs).
 
-        Called during pool provisioning so deploy_agent_code() only needs
-        to push code + config (~15s instead of ~2 min).
+        Called during pool provisioning so deploy_agent() skips the slow
+        dep install steps (~15-20s instead of ~2 min).
         """
         # Quick SSH check (3 retries × 5s — VM should already be booted)
         logger.info(f"prepare_vm: waiting for SSH at {vm_ip}:{ssh_port}...")
@@ -666,9 +666,8 @@ class AlephDeployer:
         if code != 0:
             return {"status": "error", "error": f"Caddy install failed: {stderr}"}
 
-        # Don't start Caddy with the real domain yet — ACME challenges will
-        # fail if the transparent proxy routing isn't fully propagated.
-        # deploy_agent_code() writes the Caddyfile and starts Caddy.
+        # Don't start Caddy with the real domain yet — deploy_agent() will
+        # write the Caddyfile and start Caddy when the agent is deployed.
         await self._ssh_run(vm_ip, ssh_port, "systemctl stop caddy 2>/dev/null")
 
         # Create agent dirs
