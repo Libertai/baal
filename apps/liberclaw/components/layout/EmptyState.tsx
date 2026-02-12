@@ -1,6 +1,7 @@
-import React from 'react';
-import { View, Text } from 'react-native';
-import Button from '../ui/Button';
+import React from "react";
+import { View, Text } from "react-native";
+
+import Button from "../ui/Button";
 
 interface EmptyStateProps {
   title: string;
@@ -17,10 +18,10 @@ export default function EmptyState({
 }: EmptyStateProps) {
   return (
     <View className="flex-1 items-center justify-center px-8 py-16">
-      <Text className="mb-2 text-center text-xl font-semibold text-gray-900">
+      <Text className="mb-2 text-center text-xl font-semibold text-text-primary">
         {title}
       </Text>
-      <Text className="mb-6 text-center text-base text-gray-500">
+      <Text className="mb-6 text-center text-base text-text-secondary">
         {description}
       </Text>
       {actionLabel && onAction ? (

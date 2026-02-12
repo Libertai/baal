@@ -7,16 +7,14 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { useRouter, useLocalSearchParams, Stack } from "expo-router";
+import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { useAgent, useDeleteAgent } from "@/lib/hooks/useAgents";
 import { useDeploymentStatus } from "@/lib/hooks/useDeployment";
-import type { DeploymentStatusValue } from "@/lib/api/types";
+import AgentStatusBadge from "@/components/agent/AgentStatusBadge";
 
-const STATUS_LABELS: Record<DeploymentStatusValue, { label: string; color: string }> = {
-  running: { label: "Running", color: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400" },
-  deploying: { label: "Deploying", color: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400" },
-  pending: { label: "Pending", color: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400" },
-  failed: { label: "Failed", color: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400" },
-  stopped: { label: "Stopped", color: "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-400" },
+const MODEL_BRANDS: Record<string, string> = {
+  "qwen3-coder-next": "Claw-Core",
+  "glm-4.7": "Deep-Claw",
 };
 
 function DeploymentProgress({ agentId }: { agentId: string }) {
@@ -24,26 +22,26 @@ function DeploymentProgress({ agentId }: { agentId: string }) {
   const steps = data?.steps ?? [];
 
   return (
-    <View className="bg-white dark:bg-gray-900 rounded-xl p-4 border border-gray-200 dark:border-gray-800 mb-4">
-      <Text className="text-sm font-semibold text-gray-900 dark:text-white mb-3">
+    <View className="bg-surface-raised border border-surface-border rounded-card p-4 mb-4">
+      <Text className="text-sm font-semibold text-text-primary mb-3">
         Deployment Progress
       </Text>
       {steps.length > 0 ? (
         steps.map((step, i) => (
           <View key={i} className="flex-row items-center mb-2">
-            <Text className="text-sm text-gray-500 dark:text-gray-400 mr-2">
+            <Text className="text-sm text-text-secondary mr-2">
               {step.status === "done" ? "[done]" : step.status === "active" ? "[...]" : "[ ]"}
             </Text>
-            <Text className="text-sm text-gray-700 dark:text-gray-300">
+            <Text className="text-sm text-text-primary">
               {String(step.label ?? step.step ?? `Step ${i + 1}`)}
             </Text>
           </View>
         ))
       ) : (
         <View className="flex-row items-center">
-          <ActivityIndicator size="small" color="#2563eb" />
-          <Text className="text-sm text-gray-500 dark:text-gray-400 ml-2">
-            Provisioning VM...
+          <ActivityIndicator size="small" color="#ff5e00" />
+          <Text className="text-sm text-text-secondary ml-2">
+            Provisioning...
           </Text>
         </View>
       )}
@@ -86,15 +84,23 @@ export default function AgentDetailScreen() {
   if (isLoading || !agent) {
     return (
       <>
-        <Stack.Screen options={{ headerShown: true, title: "Agent" }} />
-        <View className="flex-1 items-center justify-center bg-gray-50 dark:bg-gray-950">
-          <ActivityIndicator size="large" color="#2563eb" />
+        <Stack.Screen
+          options={{
+            headerShown: true,
+            title: "Agent",
+            headerStyle: { backgroundColor: "#0a0810" },
+            headerTintColor: "#f0ede8",
+            headerTitleStyle: { fontWeight: "700", color: "#f0ede8" },
+          }}
+        />
+        <View className="flex-1 items-center justify-center bg-surface-base">
+          <ActivityIndicator size="large" color="#ff5e00" />
         </View>
       </>
     );
   }
 
-  const statusInfo = STATUS_LABELS[agent.deployment_status] ?? STATUS_LABELS.stopped;
+  const brandName = MODEL_BRANDS[agent.model] ?? agent.model;
 
   return (
     <>
@@ -102,48 +108,50 @@ export default function AgentDetailScreen() {
         options={{
           headerShown: true,
           title: agent.name,
+          headerStyle: { backgroundColor: "#0a0810" },
+          headerTintColor: "#f0ede8",
+          headerTitleStyle: { fontWeight: "700", color: "#f0ede8" },
         }}
       />
       <ScrollView
-        className="flex-1 bg-gray-50 dark:bg-gray-950"
+        className="flex-1 bg-surface-base"
         contentContainerStyle={{ padding: 16 }}
       >
         {/* Status badge */}
         <View className="flex-row items-center mb-6">
-          <View className={`rounded-full px-3 py-1 ${statusInfo.color}`}>
-            <Text className={`text-sm font-medium ${statusInfo.color}`}>
-              {statusInfo.label}
-            </Text>
-          </View>
+          <AgentStatusBadge status={agent.deployment_status} />
         </View>
 
         {/* Deployment progress */}
         {isDeploying && <DeploymentProgress agentId={id!} />}
 
         {/* Agent info */}
-        <View className="bg-white dark:bg-gray-900 rounded-xl p-4 border border-gray-200 dark:border-gray-800 mb-4">
+        <View className="bg-surface-raised border border-surface-border rounded-card p-4 mb-4">
           <View className="mb-3">
-            <Text className="text-xs text-gray-400 uppercase tracking-wider mb-1">
+            <Text className="font-mono text-[10px] uppercase tracking-wider text-text-tertiary mb-1">
               Name
             </Text>
-            <Text className="text-base text-gray-900 dark:text-white">
+            <Text className="text-base text-text-primary">
               {agent.name}
             </Text>
           </View>
           <View className="mb-3">
-            <Text className="text-xs text-gray-400 uppercase tracking-wider mb-1">
+            <Text className="font-mono text-[10px] uppercase tracking-wider text-text-tertiary mb-1">
               Model
             </Text>
-            <Text className="text-base text-gray-900 dark:text-white">
+            <Text className="text-base text-text-primary">
+              {brandName}
+            </Text>
+            <Text className="font-mono text-xs text-claw-orange">
               {agent.model}
             </Text>
           </View>
           <View>
-            <Text className="text-xs text-gray-400 uppercase tracking-wider mb-1">
+            <Text className="font-mono text-[10px] uppercase tracking-wider text-text-tertiary mb-1">
               System Prompt
             </Text>
             <Text
-              className="text-sm text-gray-700 dark:text-gray-300"
+              className="text-sm text-text-secondary"
               numberOfLines={4}
             >
               {agent.system_prompt}
@@ -153,9 +161,9 @@ export default function AgentDetailScreen() {
 
         {/* Health */}
         {agent.deployment_status === "running" && (
-          <View className="bg-white dark:bg-gray-900 rounded-xl p-4 border border-gray-200 dark:border-gray-800 mb-4 flex-row items-center">
-            <View className="w-2.5 h-2.5 rounded-full bg-green-500 mr-2" />
-            <Text className="text-sm text-gray-700 dark:text-gray-300">
+          <View className="bg-surface-raised border border-surface-border rounded-card p-4 mb-4 flex-row items-center">
+            <View className="w-2.5 h-2.5 rounded-full bg-status-running mr-2" />
+            <Text className="text-sm text-text-secondary">
               Agent is healthy
             </Text>
           </View>
@@ -165,17 +173,19 @@ export default function AgentDetailScreen() {
         <View className="flex-row gap-3 mb-4">
           {agent.deployment_status === "running" && (
             <TouchableOpacity
-              className="flex-1 bg-blue-600 rounded-lg py-3 items-center"
+              className="flex-1 bg-claw-orange active:bg-claw-orange-dark rounded-button py-3 flex-row items-center justify-center gap-2"
               onPress={() => router.push(`/agent/${id}/chat`)}
             >
+              <MaterialIcons name="chat-bubble-outline" size={18} color="#ffffff" />
               <Text className="text-white font-semibold text-base">Chat</Text>
             </TouchableOpacity>
           )}
           <TouchableOpacity
-            className="flex-1 border border-gray-300 dark:border-gray-700 rounded-lg py-3 items-center"
+            className="flex-1 bg-surface-raised border border-surface-border active:bg-surface-overlay rounded-button py-3 flex-row items-center justify-center gap-2"
             onPress={() => router.push(`/agent/${id}/edit`)}
           >
-            <Text className="text-gray-900 dark:text-white font-semibold text-base">
+            <MaterialIcons name="edit" size={18} color="#f0ede8" />
+            <Text className="text-text-primary font-semibold text-base">
               Edit
             </Text>
           </TouchableOpacity>
@@ -183,16 +193,19 @@ export default function AgentDetailScreen() {
 
         {/* Delete */}
         <TouchableOpacity
-          className="bg-red-50 dark:bg-red-900/20 rounded-lg py-3 items-center"
+          className="bg-claw-red/10 border border-claw-red/25 rounded-button py-3 flex-row items-center justify-center gap-2"
           onPress={handleDelete}
           disabled={deleteAgent.isPending}
         >
           {deleteAgent.isPending ? (
-            <ActivityIndicator color="#dc2626" />
+            <ActivityIndicator color="#ff1744" />
           ) : (
-            <Text className="text-red-600 dark:text-red-400 font-semibold text-base">
-              Delete Agent
-            </Text>
+            <>
+              <MaterialIcons name="delete-outline" size={18} color="#ff003c" />
+              <Text className="text-claw-red font-semibold text-base">
+                Delete Agent
+              </Text>
+            </>
           )}
         </TouchableOpacity>
       </ScrollView>

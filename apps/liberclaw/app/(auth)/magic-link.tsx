@@ -8,13 +8,14 @@ import {
 } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { useAuth } from "@/lib/auth/provider";
+import type { TokenPair } from "@/lib/api/types";
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:8000";
 
 export default function MagicLinkScreen() {
   const router = useRouter();
   const { email } = useLocalSearchParams<{ email?: string }>();
-  const { signIn } = useAuth();
+  const { login } = useAuth();
   const [token, setToken] = useState("");
   const [loading, setLoading] = useState(false);
   const [resending, setResending] = useState(false);
@@ -35,7 +36,7 @@ export default function MagicLinkScreen() {
         throw new Error(data?.detail ?? "Verification failed");
       }
       const data = await res.json();
-      await signIn(data.access_token, data.refresh_token);
+      await login(data as TokenPair);
       router.replace("/(tabs)");
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Something went wrong");
@@ -66,30 +67,30 @@ export default function MagicLinkScreen() {
 
   return (
     <View className="w-full max-w-sm">
-      <Text className="text-2xl font-bold text-center mb-2 text-gray-900 dark:text-white">
+      <Text className="text-2xl font-bold text-center mb-2 text-text-primary">
         Check your email
       </Text>
-      <Text className="text-base text-center text-gray-500 dark:text-gray-400 mb-8">
+      <Text className="text-base text-center text-text-secondary mb-8">
         {email
           ? `We sent a magic link to ${email}`
           : "We sent you a magic link"}
       </Text>
 
       {error && (
-        <View className="bg-red-50 dark:bg-red-900/30 p-3 rounded-lg mb-4">
-          <Text className="text-red-600 dark:text-red-400 text-sm text-center">
+        <View className="bg-claw-red/10 border border-claw-red/25 p-3 rounded-lg mb-4">
+          <Text className="text-claw-red text-sm text-center">
             {error}
           </Text>
         </View>
       )}
 
-      <Text className="text-sm text-gray-500 dark:text-gray-400 mb-2">
+      <Text className="text-sm text-text-secondary mb-2">
         Or enter the code from your email:
       </Text>
       <TextInput
-        className="border border-gray-300 dark:border-gray-700 rounded-lg px-4 py-3 mb-4 text-base text-center tracking-widest text-gray-900 dark:text-white bg-white dark:bg-gray-900"
+        className="border border-surface-border rounded-lg px-4 py-3 mb-4 text-base text-center tracking-widest text-text-primary bg-surface-raised"
         placeholder="Enter code"
-        placeholderTextColor="#9ca3af"
+        placeholderTextColor="#5a5464"
         autoCapitalize="none"
         autoCorrect={false}
         value={token}
@@ -97,7 +98,7 @@ export default function MagicLinkScreen() {
       />
 
       <TouchableOpacity
-        className="bg-blue-600 rounded-lg py-3 mb-4 items-center"
+        className="bg-claw-orange active:bg-claw-orange-dark rounded-lg py-3 mb-4 items-center"
         onPress={handleVerify}
         disabled={loading}
       >
@@ -113,7 +114,7 @@ export default function MagicLinkScreen() {
         onPress={handleResend}
         disabled={resending || !email}
       >
-        <Text className="text-blue-600 dark:text-blue-400 text-sm">
+        <Text className="text-claw-orange text-sm">
           {resending ? "Resending..." : "Resend magic link"}
         </Text>
       </TouchableOpacity>
@@ -122,7 +123,7 @@ export default function MagicLinkScreen() {
         className="items-center py-2 mt-2"
         onPress={() => router.back()}
       >
-        <Text className="text-gray-500 dark:text-gray-400 text-sm">
+        <Text className="text-text-secondary text-sm">
           Back to login
         </Text>
       </TouchableOpacity>

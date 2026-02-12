@@ -1,104 +1,239 @@
+import { useState } from "react";
 import { View, Text, TouchableOpacity, Switch, ScrollView } from "react-native";
-import { useAuth } from "@/lib/auth/provider";
-import type { ApiKeyResponse } from "@/lib/api/types";
+import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 
-function Section({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <View className="mb-6">
-      <Text className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2 px-1">
-        {title}
-      </Text>
-      <View className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 overflow-hidden">
-        {children}
-      </View>
-    </View>
-  );
+import { useAuth } from "@/lib/auth/provider";
+
+// ── Helpers ──────────────────────────────────────────────────────────
+
+function getUserInitial(user: { display_name?: string | null; email?: string | null }): string {
+  if (user.display_name) return user.display_name[0].toUpperCase();
+  if (user.email) return user.email[0].toUpperCase();
+  return "?";
 }
 
-function Row({
-  label,
-  value,
-  onPress,
-}: {
+// ── Sub-components ───────────────────────────────────────────────────
+
+interface SettingsRowProps {
+  icon: React.ComponentProps<typeof MaterialIcons>["name"];
   label: string;
-  value?: string | null;
+  trailing?: React.ReactNode;
   onPress?: () => void;
-}) {
+  isLast?: boolean;
+}
+
+function SettingsRow({ icon, label, trailing, onPress, isLast = false }: SettingsRowProps): React.ReactElement {
+  const borderClass = isLast ? "" : "border-b border-surface-border";
+
   return (
     <TouchableOpacity
-      className="flex-row items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-gray-800"
+      className={`flex-row items-center px-4 py-3 ${borderClass}`}
       onPress={onPress}
       disabled={!onPress}
+      activeOpacity={onPress ? 0.7 : 1}
     >
-      <Text className="text-base text-gray-900 dark:text-white">{label}</Text>
-      {value != null && (
-        <Text className="text-base text-gray-500 dark:text-gray-400">
-          {value}
-        </Text>
-      )}
+      <MaterialIcons name={icon} size={20} color="#8a8494" />
+      <Text className="flex-1 ml-3 text-base text-text-primary">{label}</Text>
+      {trailing}
     </TouchableOpacity>
   );
 }
 
-export default function SettingsScreen() {
-  const { user, signOut } = useAuth();
+interface StatCardProps {
+  label: string;
+  children: React.ReactNode;
+}
+
+function StatCard({ label, children }: StatCardProps): React.ReactElement {
+  return (
+    <View className="flex-1 bg-surface-raised border border-surface-border rounded-card p-4">
+      <Text className="font-mono text-[10px] uppercase tracking-wider text-text-tertiary mb-2">
+        {label}
+      </Text>
+      {children}
+    </View>
+  );
+}
+
+// ── Slot Indicator ───────────────────────────────────────────────────
+
+interface SlotIndicatorProps {
+  filled: number;
+  total: number;
+}
+
+function SlotIndicator({ filled, total }: SlotIndicatorProps): React.ReactElement {
+  const slots = [];
+  for (let i = 0; i < total; i++) {
+    const isFilled = i < filled;
+    slots.push(
+      <View
+        key={i}
+        className={
+          isFilled
+            ? "w-6 h-6 rounded bg-claw-orange/20 border border-claw-orange/40"
+            : "w-6 h-6 rounded bg-surface-overlay border border-dashed border-surface-border"
+        }
+      />,
+    );
+  }
+  return <View className="flex-row gap-1.5 mt-2">{slots}</View>;
+}
+
+// ── Main Screen ──────────────────────────────────────────────────────
+
+export default function SettingsScreen(): React.ReactElement {
+  const { user, logout } = useAuth();
+  const [showToolCalls, setShowToolCalls] = useState(user?.show_tool_calls ?? true);
+
+  const displayName = user?.display_name ?? "Anonymous";
+  const email = user?.email ?? "No email";
+  const tier = user?.tier ?? "free";
+  const isPremium = tier === "pro" || tier === "premium";
+
+  // Placeholder usage values (to be wired to real API later)
+  const messagesUsed = 23;
+  const messagesLimit = 50;
+  const messageProgress = messagesUsed / messagesLimit;
+  const agentCount = 2;
+  const agentLimit = isPremium ? 10 : 3;
 
   return (
     <ScrollView
-      className="flex-1 bg-gray-50 dark:bg-gray-950"
-      contentContainerStyle={{ padding: 16 }}
+      className="flex-1 bg-surface-base"
+      contentContainerStyle={{ padding: 16, paddingBottom: 48 }}
     >
-      {/* Profile */}
-      <Section title="Profile">
-        <Row label="Name" value={user?.display_name ?? "Not set"} />
-        <Row label="Email" value={user?.email ?? "Not set"} />
-        <Row label="Tier" value={user?.tier ?? "free"} />
-      </Section>
-
-      {/* Preferences */}
-      <Section title="Preferences">
-        <View className="flex-row items-center justify-between px-4 py-3">
-          <Text className="text-base text-gray-900 dark:text-white">
-            Show Tool Calls
+      {/* ── Profile Card ─────────────────────────────────────────── */}
+      <View className="bg-surface-raised border border-surface-border rounded-card p-4 flex-row items-center mb-4">
+        <View className="w-14 h-14 rounded-full bg-claw-orange items-center justify-center">
+          <Text className="text-white text-xl font-bold">
+            {getUserInitial({ display_name: user?.display_name, email: user?.email })}
           </Text>
-          <Switch
-            value={user?.show_tool_calls ?? true}
-            onValueChange={() => {
-              // TODO: call useUpdateProfile mutation
-            }}
-            trackColor={{ false: "#d1d5db", true: "#3b82f6" }}
-          />
         </View>
-      </Section>
+        <View className="ml-4 flex-1">
+          <Text className="text-text-primary font-bold text-lg font-display">
+            {displayName}
+          </Text>
+          <Text className="text-text-secondary text-sm mt-0.5">{email}</Text>
+          <Text className="font-mono text-[10px] uppercase tracking-wider text-claw-orange mt-1">
+            {tier}
+          </Text>
+        </View>
+      </View>
 
-      {/* API Keys */}
-      <Section title="API Keys">
-        <Row label="Manage API Keys" value="" onPress={() => {
-          // TODO: navigate to API keys management screen
-        }} />
-      </Section>
+      {/* ── Usage Stats ──────────────────────────────────────────── */}
+      <View className="flex-row gap-3 mb-4">
+        <StatCard label="Message Usage">
+          <Text className="text-text-primary text-xl font-bold">
+            {messagesUsed}
+            <Text className="text-text-secondary text-sm font-normal">
+              {" "}/ {messagesLimit}
+            </Text>
+          </Text>
+          <View className="h-1.5 bg-surface-border rounded-full mt-2 overflow-hidden">
+            <View
+              className="h-full bg-claw-orange rounded-full"
+              style={{ width: `${Math.min(messageProgress * 100, 100)}%` }}
+            />
+          </View>
+          <Text className="text-text-tertiary text-[10px] font-mono mt-1.5">
+            Resets in 4h 12m
+          </Text>
+        </StatCard>
 
-      {/* Usage */}
-      <Section title="Usage">
-        <Row label="Daily Messages" value="--/--" />
-        <Row label="Active Agents" value="--" />
-      </Section>
+        <StatCard label="Agent Slots">
+          <Text className="text-text-primary text-xl font-bold">
+            {agentCount}
+            <Text className="text-text-secondary text-sm font-normal">
+              {" "}/ {agentLimit}
+            </Text>
+          </Text>
+          <SlotIndicator filled={agentCount} total={agentLimit} />
+        </StatCard>
+      </View>
 
-      {/* Sign Out */}
+      {/* ── Upgrade CTA (free tier only) ─────────────────────────── */}
+      {!isPremium && (
+        <View className="bg-claw-orange rounded-card p-6 mb-4">
+          <Text className="text-white font-bold text-lg font-display">
+            Upgrade to Pro
+          </Text>
+          <Text className="text-white/80 text-sm mt-1 leading-5">
+            Remove limits and unleash the full potential of your AI agents.
+          </Text>
+          <View className="mt-4 gap-2">
+            <View className="flex-row items-center">
+              <MaterialIcons name="check-circle" size={18} color="white" />
+              <Text className="text-white text-sm ml-2">Unlimited Messages</Text>
+            </View>
+            <View className="flex-row items-center">
+              <MaterialIcons name="check-circle" size={18} color="white" />
+              <Text className="text-white text-sm ml-2">10 Agent Slots</Text>
+            </View>
+            <View className="flex-row items-center">
+              <MaterialIcons name="check-circle" size={18} color="white" />
+              <Text className="text-white text-sm ml-2">Premium Models</Text>
+            </View>
+          </View>
+          <TouchableOpacity
+            className="bg-white rounded-lg py-2.5 items-center mt-4"
+            activeOpacity={0.8}
+          >
+            <Text className="text-claw-orange font-bold text-base">Upgrade Now</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* ── Settings ─────────────────────────────────────────────── */}
+      <View className="bg-surface-raised border border-surface-border rounded-card overflow-hidden mb-4">
+        <SettingsRow
+          icon="code"
+          label="Show Tool Calls"
+          trailing={
+            <Switch
+              value={showToolCalls}
+              onValueChange={setShowToolCalls}
+              trackColor={{ false: "#2a2235", true: "#ff5e00" }}
+              thumbColor="#f0ede8"
+            />
+          }
+        />
+        <SettingsRow
+          icon="vpn-key"
+          label="API Keys"
+          onPress={() => {
+            // TODO: navigate to API keys screen
+          }}
+          trailing={
+            <MaterialIcons name="chevron-right" size={20} color="#5a5464" />
+          }
+        />
+        <SettingsRow
+          icon="dark-mode"
+          label="Dark Mode"
+          isLast
+          trailing={
+            <Text className="font-mono text-[10px] uppercase tracking-wider text-status-running">
+              Active
+            </Text>
+          }
+        />
+      </View>
+
+      {/* ── Sign Out ─────────────────────────────────────────────── */}
       <TouchableOpacity
-        className="bg-red-50 dark:bg-red-900/20 rounded-xl py-3 items-center mt-4"
-        onPress={signOut}
+        className="bg-claw-red/10 border border-claw-red/25 rounded-card py-3 flex-row items-center justify-center"
+        onPress={logout}
+        activeOpacity={0.7}
       >
-        <Text className="text-red-600 dark:text-red-400 font-semibold text-base">
-          Sign Out
-        </Text>
+        <MaterialIcons name="logout" size={18} color="#ff003c" />
+        <Text className="text-claw-red font-semibold text-base ml-2">Sign Out</Text>
       </TouchableOpacity>
+
+      {/* ── Footer ───────────────────────────────────────────────── */}
+      <Text className="font-mono text-[10px] text-text-tertiary text-center mt-8">
+        LiberClaw v0.1.0
+      </Text>
     </ScrollView>
   );
 }

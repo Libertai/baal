@@ -1,30 +1,44 @@
+import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { Redirect, Tabs } from "expo-router";
-import { Text } from "react-native";
+import { Platform, View, useWindowDimensions } from "react-native";
+
+import SidebarNav from "@/components/layout/SidebarNav";
 import { useAuth } from "@/lib/auth/provider";
 
+const DESKTOP_BREAKPOINT = 1024;
+
 export default function TabsLayout() {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { user, isLoading } = useAuth();
+  const { width } = useWindowDimensions();
+
+  const isDesktopWeb = Platform.OS === "web" && width >= DESKTOP_BREAKPOINT;
 
   if (isLoading) return null;
 
-  if (!isAuthenticated) {
+  if (!user) {
     return <Redirect href="/(auth)/login" />;
   }
 
-  return (
+  const tabs = (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: "#2563eb",
-        tabBarInactiveTintColor: "#9ca3af",
-        tabBarStyle: {
-          borderTopColor: "#e5e7eb",
-        },
+        tabBarActiveTintColor: "#ff5e00",
+        tabBarInactiveTintColor: "#5a5464",
+        tabBarStyle: isDesktopWeb
+          ? { display: "none" }
+          : {
+              backgroundColor: "#0a0810",
+              borderTopColor: "#2a2235",
+            },
         headerStyle: {
-          backgroundColor: "#ffffff",
+          backgroundColor: "#0a0810",
         },
+        headerTintColor: "#f0ede8",
         headerTitleStyle: {
-          fontWeight: "600",
+          fontWeight: "700",
+          color: "#f0ede8",
         },
+        headerShown: !isDesktopWeb,
       }}
     >
       <Tabs.Screen
@@ -32,7 +46,7 @@ export default function TabsLayout() {
         options={{
           title: "Agents",
           tabBarIcon: ({ color }) => (
-            <Text style={{ color, fontSize: 20 }}>{"@"}</Text>
+            <MaterialIcons name="smart-toy" size={24} color={color} />
           ),
         }}
       />
@@ -41,7 +55,11 @@ export default function TabsLayout() {
         options={{
           title: "Chat",
           tabBarIcon: ({ color }) => (
-            <Text style={{ color, fontSize: 20 }}>{"\u2709"}</Text>
+            <MaterialIcons
+              name="chat-bubble-outline"
+              size={24}
+              color={color}
+            />
           ),
         }}
       />
@@ -50,10 +68,21 @@ export default function TabsLayout() {
         options={{
           title: "Settings",
           tabBarIcon: ({ color }) => (
-            <Text style={{ color, fontSize: 20 }}>{"\u2699"}</Text>
+            <MaterialIcons name="settings" size={24} color={color} />
           ),
         }}
       />
     </Tabs>
+  );
+
+  if (!isDesktopWeb) {
+    return tabs;
+  }
+
+  return (
+    <View className="flex-1 flex-row bg-surface-base">
+      <SidebarNav />
+      <View className="flex-1">{tabs}</View>
+    </View>
   );
 }

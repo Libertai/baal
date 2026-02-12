@@ -6,6 +6,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
 import {
   listAgents,
+  getAgent,
   createAgent,
   deleteAgent,
   updateAgent,
@@ -14,6 +15,17 @@ import type { AgentCreate, AgentUpdate } from "@/lib/api/types";
 
 /** Query key used for the agents list. */
 export const AGENTS_QUERY_KEY = ["agents"] as const;
+
+/**
+ * Fetch a single agent by ID.
+ */
+export function useAgent(id: string | undefined) {
+  return useQuery({
+    queryKey: ["agent", id],
+    queryFn: () => getAgent(id!),
+    enabled: !!id,
+  });
+}
 
 /**
  * Fetch the list of agents for the authenticated user.

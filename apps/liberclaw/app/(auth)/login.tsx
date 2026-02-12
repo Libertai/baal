@@ -14,7 +14,7 @@ const API_URL = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:8000";
 
 export default function LoginScreen() {
   const router = useRouter();
-  const { signIn } = useAuth();
+  const { login } = useAuth();
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -53,26 +53,25 @@ export default function LoginScreen() {
 
   return (
     <View className="w-full max-w-sm">
-      <Text className="text-3xl font-bold text-center mb-2 text-gray-900 dark:text-white">
-        LiberClaw
+      <Text className="text-3xl font-bold text-center mb-1 text-text-primary">
+        Liber<Text className="text-claw-orange">Claw</Text>
       </Text>
-      <Text className="text-base text-center text-gray-500 dark:text-gray-400 mb-10">
-        Deploy and chat with AI agents
+      <Text className="font-mono text-xs uppercase tracking-widest text-claw-orange/70 text-center mb-8">
+        Autonomous AI Agents
       </Text>
 
       {error && (
-        <View className="bg-red-50 dark:bg-red-900/30 p-3 rounded-lg mb-4">
-          <Text className="text-red-600 dark:text-red-400 text-sm text-center">
+        <View className="bg-claw-red/10 border border-claw-red/25 p-3 rounded-lg mb-4">
+          <Text className="text-claw-red text-sm text-center">
             {error}
           </Text>
         </View>
       )}
 
-      {/* Email magic link */}
       <TextInput
-        className="border border-gray-300 dark:border-gray-700 rounded-lg px-4 py-3 mb-3 text-base text-gray-900 dark:text-white bg-white dark:bg-gray-900"
+        className="border border-surface-border rounded-lg px-4 py-3 mb-3 text-base text-text-primary bg-surface-raised"
         placeholder="Email address"
-        placeholderTextColor="#9ca3af"
+        placeholderTextColor="#5a5464"
         keyboardType="email-address"
         autoCapitalize="none"
         autoCorrect={false}
@@ -80,7 +79,7 @@ export default function LoginScreen() {
         onChangeText={setEmail}
       />
       <TouchableOpacity
-        className="bg-blue-600 rounded-lg py-3 mb-6 items-center"
+        className="bg-claw-orange active:bg-claw-orange-dark rounded-lg py-3 mb-6 items-center"
         onPress={handleMagicLink}
         disabled={loading}
       >
@@ -93,37 +92,35 @@ export default function LoginScreen() {
         )}
       </TouchableOpacity>
 
-      {/* Divider */}
       <View className="flex-row items-center mb-6">
-        <View className="flex-1 h-px bg-gray-300 dark:bg-gray-700" />
-        <Text className="mx-4 text-gray-500 dark:text-gray-400 text-sm">or</Text>
-        <View className="flex-1 h-px bg-gray-300 dark:bg-gray-700" />
+        <View className="flex-1 h-px bg-surface-border" />
+        <Text className="mx-4 text-text-tertiary text-sm">or</Text>
+        <View className="flex-1 h-px bg-surface-border" />
       </View>
 
-      {/* OAuth buttons */}
       <TouchableOpacity
-        className="border border-gray-300 dark:border-gray-700 rounded-lg py-3 mb-3 items-center flex-row justify-center"
+        className="bg-white border border-white/20 active:bg-gray-100 rounded-lg py-3 mb-3 items-center flex-row justify-center"
         onPress={() => handleOAuth("google")}
       >
-        <Text className="text-base text-gray-900 dark:text-white">
+        <Text className="text-base text-gray-900 font-semibold">
           Continue with Google
         </Text>
       </TouchableOpacity>
 
       <TouchableOpacity
-        className="border border-gray-300 dark:border-gray-700 rounded-lg py-3 mb-3 items-center flex-row justify-center"
+        className="bg-surface-raised border border-surface-border active:bg-surface-overlay rounded-lg py-3 mb-3 items-center flex-row justify-center"
         onPress={() => handleOAuth("github")}
       >
-        <Text className="text-base text-gray-900 dark:text-white">
+        <Text className="text-base text-text-primary font-semibold">
           Continue with GitHub
         </Text>
       </TouchableOpacity>
 
       <TouchableOpacity
-        className="border border-gray-300 dark:border-gray-700 rounded-lg py-3 items-center opacity-50"
+        className="border border-surface-border rounded-lg py-3 items-center opacity-50"
         disabled
       >
-        <Text className="text-base text-gray-400 dark:text-gray-500">
+        <Text className="text-base text-text-tertiary">
           Connect Wallet (coming soon)
         </Text>
       </TouchableOpacity>

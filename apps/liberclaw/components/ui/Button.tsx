@@ -11,22 +11,26 @@ interface ButtonProps {
   loading?: boolean;
 }
 
-const variantStyles: Record<ButtonVariant, { container: string; text: string }> = {
+const variantStyles: Record<ButtonVariant, { container: string; text: string; indicator: string }> = {
   primary: {
-    container: 'bg-blue-600 active:bg-blue-700',
+    container: 'bg-claw-orange active:bg-claw-orange-dark',
     text: 'text-white',
+    indicator: '#ffffff',
   },
   secondary: {
-    container: 'bg-gray-200 active:bg-gray-300',
-    text: 'text-gray-900',
+    container: 'bg-surface-raised active:bg-surface-overlay border border-surface-border',
+    text: 'text-text-primary',
+    indicator: '#f0ede8',
   },
   danger: {
-    container: 'bg-red-600 active:bg-red-700',
+    container: 'bg-claw-red active:bg-red-700',
     text: 'text-white',
+    indicator: '#ffffff',
   },
   ghost: {
-    container: 'bg-transparent active:bg-gray-100',
-    text: 'text-blue-600',
+    container: 'bg-transparent active:bg-surface-overlay',
+    text: 'text-claw-orange',
+    indicator: '#ffffff',
   },
 };
 
@@ -50,7 +54,7 @@ export default function Button({
       {loading ? (
         <ActivityIndicator
           size="small"
-          color={variant === 'secondary' ? '#111827' : '#ffffff'}
+          color={styles.indicator}
           className="mr-2"
         />
       ) : null}

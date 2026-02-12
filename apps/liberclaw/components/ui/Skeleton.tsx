@@ -41,7 +41,7 @@ export default function Skeleton({
   return (
     <Animated.View
       style={[style, { opacity }]}
-      className={`rounded-md bg-gray-200 ${className}`}
+      className={`rounded-md bg-surface-border ${className}`}
     />
   );
 }

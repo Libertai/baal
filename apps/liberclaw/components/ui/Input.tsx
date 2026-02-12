@@ -23,22 +23,22 @@ export default function Input({
   return (
     <View className="mb-4">
       {label ? (
-        <Text className="mb-1.5 text-sm font-medium text-gray-700">{label}</Text>
+        <Text className="mb-1.5 text-sm font-medium text-text-secondary">{label}</Text>
       ) : null}
       <TextInput
         value={value}
         onChangeText={onChangeText}
         placeholder={placeholder}
-        placeholderTextColor="#9ca3af"
+        placeholderTextColor="#5a5464"
         secureTextEntry={secureTextEntry}
         multiline={multiline}
         textAlignVertical={multiline ? 'top' : 'center'}
-        className={`rounded-lg border px-4 py-3 text-base text-gray-900 ${
-          error ? 'border-red-500' : 'border-gray-300'
+        className={`rounded-lg border bg-surface-raised px-4 py-3 text-base text-text-primary ${
+          error ? 'border-claw-red' : 'border-surface-border'
         } ${multiline ? 'min-h-[100px]' : ''}`}
       />
       {error ? (
-        <Text className="mt-1 text-sm text-red-500">{error}</Text>
+        <Text className="mt-1 text-sm text-claw-red">{error}</Text>
       ) : null}
     </View>
   );

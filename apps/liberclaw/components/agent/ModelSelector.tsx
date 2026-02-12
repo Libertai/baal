@@ -1,22 +1,34 @@
 import React from 'react';
 import { View, Text, Pressable } from 'react-native';
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 
 interface Model {
   id: string;
+  brand: string;
   label: string;
   description: string;
+  icon: keyof typeof MaterialIcons.glyphMap;
+  stat: { label: string; value: string };
+  recommended?: boolean;
 }
 
 const models: Model[] = [
   {
     id: 'qwen3-coder-next',
-    label: 'Qwen 3 Coder Next',
-    description: 'High-performance coding model with 98K context',
+    brand: 'Claw-Core',
+    label: 'qwen3-coder-next',
+    description: 'Balanced performance for general autonomous tasks and coding.',
+    icon: 'balance',
+    stat: { label: 'Context', value: '98K' },
+    recommended: true,
   },
   {
     id: 'glm-4.7',
-    label: 'GLM 4.7',
-    description: 'General-purpose model with 128K context',
+    brand: 'Deep-Claw',
+    label: 'glm-4.7',
+    description: 'Complex reasoning capabilities for research and strategy.',
+    icon: 'psychology',
+    stat: { label: 'Context', value: '128K' },
   },
 ];
 
@@ -27,36 +39,50 @@ interface ModelSelectorProps {
 
 export default function ModelSelector({ selected, onSelect }: ModelSelectorProps) {
   return (
-    <View className="gap-2">
+    <View className="gap-3">
       {models.map((model) => {
         const isSelected = selected === model.id;
         return (
           <Pressable
             key={model.id}
             onPress={() => onSelect(model.id)}
-            className={`rounded-lg border-2 p-4 ${
-              isSelected ? 'border-blue-600 bg-blue-50' : 'border-gray-200 bg-white'
+            className={`rounded-card border-2 p-5 ${
+              isSelected
+                ? 'border-claw-orange bg-claw-orange/5'
+                : 'border-surface-border bg-surface-raised'
             }`}
           >
-            <View className="flex-row items-center">
-              <View
-                className={`mr-3 h-5 w-5 items-center justify-center rounded-full border-2 ${
-                  isSelected ? 'border-blue-600' : 'border-gray-300'
-                }`}
-              >
-                {isSelected ? (
-                  <View className="h-2.5 w-2.5 rounded-full bg-blue-600" />
-                ) : null}
+            {model.recommended && (
+              <View className="absolute top-0 right-0 bg-claw-orange px-2 py-0.5 rounded-bl-lg rounded-tr-card">
+                <Text className="text-[10px] font-bold text-white uppercase">Recommended</Text>
               </View>
-              <View className="flex-1">
-                <Text className="text-base font-semibold text-gray-900">
-                  {model.label}
+            )}
+
+            <View className="flex-row items-start justify-between mb-3">
+              <View className="w-10 h-10 rounded-lg bg-surface-overlay items-center justify-center">
+                <MaterialIcons
+                  name={model.icon}
+                  size={22}
+                  color={isSelected ? '#ff5e00' : '#8a8494'}
+                />
+              </View>
+              <View className="items-end">
+                <Text className="text-[10px] text-text-tertiary font-mono uppercase">
+                  {model.stat.label}
                 </Text>
-                <Text className="mt-0.5 text-sm text-gray-500">
-                  {model.description}
-                </Text>
+                <Text className="text-sm font-bold text-text-primary">{model.stat.value}</Text>
               </View>
             </View>
+
+            <Text className="text-lg font-bold text-text-primary mb-0.5">
+              {model.brand}
+            </Text>
+            <Text className="font-mono text-[10px] text-claw-orange mb-2">
+              {model.label}
+            </Text>
+            <Text className="text-xs text-text-secondary leading-relaxed">
+              {model.description}
+            </Text>
           </Pressable>
         );
       })}

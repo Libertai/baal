@@ -11,13 +11,13 @@ interface OAuthButtonProps {
 const providerConfig: Record<OAuthProvider, { label: string; bg: string; text: string }> = {
   google: {
     label: 'Continue with Google',
-    bg: 'bg-white border border-gray-300 active:bg-gray-50',
+    bg: 'bg-white border border-white/20 active:bg-gray-100',
     text: 'text-gray-900',
   },
   github: {
     label: 'Continue with GitHub',
-    bg: 'bg-gray-900 active:bg-gray-800',
-    text: 'text-white',
+    bg: 'bg-surface-raised border border-surface-border active:bg-surface-overlay',
+    text: 'text-text-primary',
   },
 };
 

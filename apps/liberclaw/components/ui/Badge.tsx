@@ -9,11 +9,26 @@ interface BadgeProps {
 }
 
 const variantStyles: Record<BadgeVariant, { bg: string; text: string }> = {
-  success: { bg: 'bg-green-100', text: 'text-green-800' },
-  warning: { bg: 'bg-yellow-100', text: 'text-yellow-800' },
-  error: { bg: 'bg-red-100', text: 'text-red-800' },
-  info: { bg: 'bg-blue-100', text: 'text-blue-800' },
-  neutral: { bg: 'bg-gray-100', text: 'text-gray-800' },
+  success: {
+    bg: 'bg-status-running/15 border border-status-running/25',
+    text: 'text-status-running',
+  },
+  warning: {
+    bg: 'bg-status-deploying/15 border border-status-deploying/25',
+    text: 'text-status-deploying',
+  },
+  error: {
+    bg: 'bg-status-failed/15 border border-status-failed/25',
+    text: 'text-status-failed',
+  },
+  info: {
+    bg: 'bg-claw-orange/15 border border-claw-orange/25',
+    text: 'text-claw-orange',
+  },
+  neutral: {
+    bg: 'bg-surface-overlay border border-surface-border',
+    text: 'text-text-secondary',
+  },
 };
 
 export default function Badge({ text, variant = 'neutral' }: BadgeProps) {
@@ -21,7 +36,9 @@ export default function Badge({ text, variant = 'neutral' }: BadgeProps) {
 
   return (
     <View className={`self-start rounded-full px-2.5 py-0.5 ${styles.bg}`}>
-      <Text className={`text-xs font-medium ${styles.text}`}>{text}</Text>
+      <Text className={`font-mono text-[10px] font-semibold uppercase tracking-wider ${styles.text}`}>
+        {text}
+      </Text>
     </View>
   );
 }
