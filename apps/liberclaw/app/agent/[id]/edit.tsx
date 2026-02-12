@@ -14,47 +14,9 @@ import { useRouter, useLocalSearchParams, Stack } from "expo-router";
 
 import { useAgent, useUpdateAgent } from "@/lib/hooks/useAgents";
 import { redeployAgent } from "@/lib/api/agents";
+import { PROMPT_TEMPLATES } from "@/components/agent/SoulEditor";
 
 const MAX_PROMPT_LENGTH = 2000;
-
-const PROMPT_TEMPLATES = [
-  {
-    label: "Expert Coder",
-    icon: "code" as const,
-    description: "Clean, efficient code with clear explanations and best practices.",
-    prompt:
-      "You are an expert software engineer. Write clean, efficient code. Explain your reasoning.",
-  },
-  {
-    label: "Creative Writer",
-    icon: "edit-note" as const,
-    description: "Engaging, original content with vivid storytelling and imagery.",
-    prompt:
-      "You are a creative writer. Craft engaging, original content with vivid storytelling.",
-  },
-  {
-    label: "Executive Assistant",
-    icon: "calendar-month" as const,
-    description: "Organized scheduling, task management, and professional communication.",
-    prompt:
-      "You are an executive assistant. Help with scheduling, task management, and professional communication.",
-  },
-  {
-    label: "Socratic Tutor",
-    icon: "school" as const,
-    description: "Guide learning through thoughtful questions rather than direct answers.",
-    prompt:
-      "You are a Socratic tutor. Guide the learner through questions rather than giving direct answers.",
-  },
-  {
-    label: "Data Analyst",
-    icon: "analytics" as const,
-    description: "Thorough, evidence-based analysis with data-driven insights and charts.",
-    prompt:
-      "You are a data analyst. Provide thorough, evidence-based analysis with clear data insights.",
-  },
-];
-
 const DESKTOP_BREAKPOINT = 1024;
 
 function getRiskLevel(prompt: string): { label: string; color: string; bgColor: string } {

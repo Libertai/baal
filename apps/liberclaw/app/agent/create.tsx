@@ -12,6 +12,7 @@ import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { useRouter, Stack } from "expo-router";
 import { useCreateAgent } from "@/lib/hooks/useAgents";
 import ModelSelector from "@/components/agent/ModelSelector";
+import SoulEditor from "@/components/agent/SoulEditor";
 
 const isWeb = Platform.OS === "web";
 
@@ -384,31 +385,28 @@ export default function CreateAgentScreen() {
                 </View>
               )}
 
-              {/* Step 2: System Prompt */}
+              {/* Step 2: Agent Soul — prompt with templates */}
               {step === 2 && (
                 <View>
-                  <View className="flex-row items-center gap-2 mb-2">
-                    <MaterialIcons name="terminal" size={20} color="#ff5e00" />
-                    <Text className="text-xl font-bold text-text-primary">
-                      System prompt
-                    </Text>
+                  <View className="flex-row items-center justify-between mb-2">
+                    <View className="flex-row items-center gap-2">
+                      <MaterialIcons name="psychology" size={20} color="#ff5e00" />
+                      <Text className="text-xl font-bold text-text-primary">
+                        Agent Soul
+                      </Text>
+                    </View>
+                    <View className="bg-surface-overlay border border-surface-border rounded-full px-2 py-0.5">
+                      <Text className="font-mono text-[10px] text-text-secondary">v2.4</Text>
+                    </View>
                   </View>
-                  <Text className="text-sm text-text-secondary mb-6">
-                    Define your agent's personality and behavior directives.
+                  <Text className="text-sm text-text-secondary mb-4">
+                    Pick a template or define your agent's personality and behavior.
                   </Text>
-                  <TextInput
-                    className="bg-surface-base border border-surface-border rounded-xl px-4 py-3.5 text-base text-text-primary min-h-[180px] font-mono"
-                    placeholder="You are a helpful assistant..."
-                    placeholderTextColor="#5a5464"
-                    multiline
-                    textAlignVertical="top"
+                  <SoulEditor
                     value={systemPrompt}
                     onChangeText={setSystemPrompt}
-                    autoFocus
+                    minHeight={isWeb ? 240 : 180}
                   />
-                  <Text className="font-mono text-xs text-text-tertiary mt-2 text-right">
-                    {systemPrompt.length} chars
-                  </Text>
                 </View>
               )}
 
