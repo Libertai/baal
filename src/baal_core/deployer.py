@@ -21,7 +21,11 @@ try:
     from aleph.sdk.types import StorageEnum
     from aleph_message.models import Chain
     from aleph_message.models.execution.base import Payment, PaymentType
-    from aleph_message.models.execution.environment import HypervisorType
+    from aleph_message.models.execution.environment import (
+        HostRequirements,
+        HypervisorType,
+        NodeRequirements,
+    )
 
     ALEPH_SDK_AVAILABLE = True
 except ImportError:
@@ -114,36 +118,43 @@ class AlephDeployer:
                     ipv6 = node.get("ipv6_check", {})
                     if not (ipv6.get("host") is True and ipv6.get("vm") is True):
                         continue
-                    # Must support qemu and have a payment address
+                    # Must support qemu
                     if not node.get("qemu_support"):
-                        continue
-                    if not node.get("payment_receiver_address"):
                         continue
                     # Must have live system usage data
                     usage = node.get("system_usage")
                     if not usage or not usage.get("active"):
                         continue
+                    # Skip nodes with bad reputation
+                    node_score = node.get("score", 0)
+                    if node_score < 0.3:
+                        continue
 
-                    # Compute a load score (lower = less loaded = better)
+                    # Compute a composite score (higher = better)
                     cpu = usage.get("cpu", {})
                     mem = usage.get("mem", {})
                     cpu_count = cpu.get("count", 1)
                     load5 = cpu.get("load_average", {}).get("load5", 0)
-                    cpu_usage_pct = load5 / max(cpu_count, 1)
-                    mem_total = mem.get("total_kB", 1)
-                    mem_avail = mem.get("available_kB", 0)
-                    mem_usage_pct = 1.0 - (mem_avail / max(mem_total, 1))
-                    # Weighted: 60% CPU, 40% memory
-                    load_score = 0.6 * cpu_usage_pct + 0.4 * mem_usage_pct
+                    cpu_idle = 1.0 - min(load5 / max(cpu_count, 1), 1.0)
+
+                    # Use absolute available RAM (in GB) so large nodes
+                    # with lower % free still rank above small nodes
+                    mem_avail_gb = mem.get("available_kB", 0) / 1_048_576
+                    mem_score = min(mem_avail_gb / 64.0, 1.0)
+
+                    node_score_norm = min(max(node_score, 0), 1.0)
+
+                    # Weighted: 40% node score, 35% available RAM, 25% CPU idle
+                    composite = 0.40 * node_score_norm + 0.35 * mem_score + 0.25 * cpu_idle
 
                     crns.append(
                         {
                             "hash": node.get("hash"),
                             "name": node.get("name"),
                             "url": node.get("address", "").rstrip("/"),
-                            "payment_address": node["payment_receiver_address"],
-                            "score": node.get("score", 0),
-                            "load_score": load_score,
+                            "score": node_score,
+                            "composite": composite,
+                            "mem_avail_gb": round(mem_avail_gb, 1),
                         }
                     )
 
@@ -160,8 +171,8 @@ class AlephDeployer:
                         f"Filtered out {blacklisted_count} blacklisted CRN(s)"
                     )
 
-                # Sort by load (least loaded first), break ties by node score
-                crns.sort(key=lambda c: (c["load_score"], -c["score"]))
+                # Sort by composite score (highest = best)
+                crns.sort(key=lambda c: -c["composite"])
                 logger.info(f"Found {len(crns)} eligible CRNs (after blacklist)")
                 return crns
         except Exception as e:
@@ -186,132 +197,138 @@ class AlephDeployer:
         if not crns:
             return {"status": "error", "error": "No CRNs available"}
 
-        # Try up to 5 CRNs if the first ones fail (many nodes are unreliable)
-        max_crn_attempts = min(5, len(crns))
-        last_error = None
-        instance_hash = None
-
-        for crn_attempt in range(max_crn_attempts):
-            selected = crns[crn_attempt]
-            crn_url = selected["url"]
-            if not crn_url.startswith("http"):
-                crn_url = f"https://{crn_url}"
-            crn_url = crn_url.rstrip("/")
-
-            payment_receiver = selected["payment_address"]
-            logger.info(
-                f"Attempt {crn_attempt + 1}/{max_crn_attempts}: "
-                f"Selected CRN {selected['name']} (load={selected['load_score']:.2f}) "
-                f"at {crn_url}"
-            )
-
-            payment = Payment(
-                chain=Chain.ETH,
-                type=PaymentType.credit,
-                receiver=payment_receiver,
-            )
-
-            try:
-                # Only create a new instance if we don't already have one
-                # (instance survives across CRN retries — we just need a CRN to start it)
-                if instance_hash is None:
-                    async with AuthenticatedAlephHttpClient(
-                        account=self._account, api_server=aleph_settings.API_HOST
-                    ) as client:
-                        message, status = await client.create_instance(
-                            rootfs=ROOTFS_IMAGES["debian12"],
-                            rootfs_size=20480,
-                            payment=payment,
-                            vcpus=1,
-                            memory=2048,
-                            ssh_keys=[self.ssh_pubkey],
-                            hypervisor=HypervisorType.qemu,
-                            metadata={"name": f"baal-agent-{agent_name}"},
-                            channel="BAAL",
-                            storage_engine=StorageEnum.storage,
-                            sync=True,
-                        )
-
-                        instance_hash = str(message.item_hash)
-                        logger.info(f"Instance created: {instance_hash}, status: {status}")
-
-                        # Wait and verify message exists on network before notifying
-                        max_verify_attempts = 6
-                        message_found = False
-                        for attempt in range(max_verify_attempts):
-                            await asyncio.sleep(5)
-                            try:
-                                async with httpx.AsyncClient(timeout=10.0) as verify_client:
-                                    resp = await verify_client.get(
-                                        f"https://api2.aleph.im/api/v0/messages.json?hashes={instance_hash}"
-                                    )
-                                    if resp.status_code == 200:
-                                        data = resp.json()
-                                        if data.get("messages") and len(data["messages"]) > 0:
-                                            message_found = True
-                                            logger.info(f"Message verified on network after {(attempt+1)*5}s")
-                                            break
-                            except Exception:
-                                pass
-
-                        if not message_found:
-                            logger.warning(f"Message not found on network after {max_verify_attempts*5}s")
-
-                        # Additional wait for CRN propagation
-                        await asyncio.sleep(5)
-
-                # Notify CRN to start (with timeout)
+        # Probe top CRNs to find one that's actually reachable
+        selected = None
+        crn_url = None
+        candidates = crns[:5]  # Check top 5 by load score
+        async with httpx.AsyncClient(timeout=10.0) as probe_client:
+            for candidate in candidates:
+                url = candidate["url"]
+                if not url.startswith("http"):
+                    url = f"https://{url}"
+                url = url.rstrip("/")
                 try:
-                    async with VmClient(self._account, crn_url) as vm_client:
-                        start_status, start_result = await asyncio.wait_for(
-                            vm_client.start_instance(instance_hash),
-                            timeout=30.0  # 30s — many CRNs need more than 15s
+                    resp = await probe_client.get(f"{url}/", timeout=10.0)
+                    if resp.status_code < 500:
+                        selected = candidate
+                        crn_url = url
+                        break
+                    else:
+                        logger.info(f"CRN {candidate['name']} returned {resp.status_code}, skipping")
+                except Exception as e:
+                    logger.info(f"CRN {candidate['name']} unreachable: {e}")
+                    self._blacklist_crn(url, f"unreachable: {e}")
+
+        if not selected or not crn_url:
+            return {"status": "error", "error": "No reachable CRNs found"}
+
+        logger.info(
+            f"Selected CRN {selected['name']} (score={selected['composite']:.2f}, "
+            f"ram={selected['mem_avail_gb']}GB free) at {crn_url}"
+        )
+
+        # Create the instance on the network, pinned to the selected CRN
+        payment = Payment(chain=Chain.ETH, type=PaymentType.credit)
+        requirements = HostRequirements(
+            node=NodeRequirements(node_hash=selected["hash"]),
+        )
+
+        try:
+            async with AuthenticatedAlephHttpClient(
+                account=self._account, api_server=aleph_settings.API_HOST
+            ) as client:
+                message, status = await client.create_instance(
+                    rootfs=ROOTFS_IMAGES["debian12"],
+                    rootfs_size=20480,
+                    payment=payment,
+                    requirements=requirements,
+                    vcpus=1,
+                    memory=2048,
+                    ssh_keys=[self.ssh_pubkey],
+                    hypervisor=HypervisorType.qemu,
+                    metadata={"name": f"baal-agent-{agent_name}"},
+                    channel="BAAL",
+                    storage_engine=StorageEnum.storage,
+                    sync=True,
+                )
+
+            instance_hash = str(message.item_hash)
+            logger.info(f"Instance created: {instance_hash}, status: {status}")
+        except Exception as e:
+            self._blacklist_crn(crn_url, str(e))
+            return {"status": "error", "error": f"Instance creation failed: {e}"}
+
+        # Wait and verify message exists on network before notifying CRN
+        for attempt in range(6):
+            await asyncio.sleep(5)
+            try:
+                async with httpx.AsyncClient(timeout=10.0) as verify_client:
+                    resp = await verify_client.get(
+                        f"https://api2.aleph.im/api/v0/messages.json?hashes={instance_hash}"
+                    )
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        if data.get("messages") and len(data["messages"]) > 0:
+                            logger.info(f"Message verified on network after {(attempt+1)*5}s")
+                            break
+            except Exception:
+                pass
+        else:
+            logger.warning("Message not found on network after 30s, proceeding anyway")
+
+        await asyncio.sleep(5)  # Additional propagation time
+
+        # Notify the same CRN to start (retry up to 3 times)
+        max_start_attempts = 3
+        for attempt in range(max_start_attempts):
+            try:
+                async with VmClient(self._account, crn_url) as vm_client:
+                    start_status, start_result = await asyncio.wait_for(
+                        vm_client.start_instance(instance_hash),
+                        timeout=90.0,
+                    )
+                    if start_status == 200:
+                        logger.info(f"Successfully started instance on CRN {selected['name']}")
+                        return {
+                            "status": "success",
+                            "instance_hash": instance_hash,
+                            "crn_url": crn_url,
+                        }
+                    else:
+                        logger.warning(
+                            f"CRN {selected['name']} returned status {start_status}: "
+                            f"{start_result} (attempt {attempt + 1}/{max_start_attempts})"
                         )
-                        if start_status != 200:
-                            error_msg = f"CRN {selected['name']} returned status {start_status}: {start_result}"
-                            logger.warning(error_msg)
-                            last_error = error_msg
-                            self._blacklist_crn(crn_url, error_msg)
-                            continue
-
-                    # Success!
-                    logger.info(f"Successfully started instance on CRN {selected['name']}")
-                    return {
-                        "status": "success",
-                        "instance_hash": instance_hash,
-                        "crn_url": crn_url,
-                    }
-
-                except asyncio.TimeoutError:
-                    error_msg = f"CRN {selected['name']} timed out during start notification (30s)"
-                    logger.warning(error_msg)
-                    last_error = error_msg
-                    self._blacklist_crn(crn_url, "timeout during start_instance")
-                    continue
-
+            except asyncio.TimeoutError:
+                logger.warning(
+                    f"CRN {selected['name']} start notification timed out "
+                    f"(attempt {attempt + 1}/{max_start_attempts})"
+                )
             except Exception as e:
-                error_msg = f"CRN {selected['name']} failed: {str(e)}"
-                logger.warning(error_msg)
-                last_error = error_msg
-                self._blacklist_crn(crn_url, str(e))
-                continue
+                logger.warning(
+                    f"CRN {selected['name']} start failed: {e} "
+                    f"(attempt {attempt + 1}/{max_start_attempts})"
+                )
 
-        # All CRNs failed — if we created an instance but couldn't start it,
-        # still return the hash so /repair can retry later
+            if attempt < max_start_attempts - 1:
+                await asyncio.sleep(10)
+
+        # All start attempts failed
+        self._blacklist_crn(crn_url, "failed to start after retries")
         if instance_hash:
             logger.warning(
-                f"All {max_crn_attempts} CRN start attempts failed, but instance "
-                f"{instance_hash} exists. User can /repair."
+                f"All {max_start_attempts} start attempts on CRN {selected['name']} "
+                f"failed, but instance {instance_hash} exists. User can /repair."
             )
             return {
                 "status": "error",
-                "error": f"All {max_crn_attempts} CRN attempts failed. Last: {last_error}",
+                "error": f"CRN {selected['name']} failed to start instance after {max_start_attempts} attempts",
                 "instance_hash": instance_hash,
             }
 
         return {
             "status": "error",
-            "error": f"All {max_crn_attempts} CRN attempts failed. Last: {last_error}",
+            "error": "Instance creation failed",
         }
 
     # ── Allocation polling ─────────────────────────────────────────────
