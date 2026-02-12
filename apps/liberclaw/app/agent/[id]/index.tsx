@@ -2,9 +2,12 @@ import { Platform, View, Text, TouchableOpacity, ScrollView, Alert, ActivityIndi
 import { useRouter, useLocalSearchParams, Stack } from "expo-router";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import Svg, { Circle } from "react-native-svg";
+import { useState, useRef, useEffect } from "react";
 import { useAgent, useDeleteAgent } from "@/lib/hooks/useAgents";
 import { useDeploymentStatus } from "@/lib/hooks/useDeployment";
+import { repairAgent } from "@/lib/api/agents";
 import AgentStatusBadge from "@/components/agent/AgentStatusBadge";
+import type { DeploymentStep, DeploymentLogEntry } from "@/lib/api/types";
 
 const isWeb = Platform.OS === "web";
 
@@ -14,15 +17,22 @@ const MODEL_BRANDS: Record<string, string> = {
 };
 
 const DEPLOY_STEPS = [
-  { key: "provisioning", label: "Infrastructure Provisioning", detail: "Allocating compute on Aleph Cloud.", doneDetail: "Allocated 8x GPU Cluster on Node US-East-4." },
-  { key: "deploying", label: "Environment Setup", detail: "Configuring runtime and dependencies.", doneDetail: "Python 3.11 env configured. Dependencies installed." },
-  { key: "model", label: "Model Hydration", detail: "Loading weights into VRAM.", doneDetail: "Model loaded successfully." },
-  { key: "handshake", label: "Neural Link Handshake", detail: "Establishing secure websocket connection.", doneDetail: "Secure connection established." },
-  { key: "health", label: "Health Check", detail: "Verifying agent is responding.", doneDetail: "Agent responding normally." },
-  { key: "running", label: "Live Activation", detail: "Agent is online and ready.", doneDetail: "Agent is live." },
+  { key: "provisioning", label: "Infrastructure Provisioning", detail: "Allocating compute on Aleph Cloud." },
+  { key: "allocation", label: "Network Allocation", detail: "Waiting for VM to come online." },
+  { key: "ssh", label: "Secure Connection", detail: "Establishing SSH connection to VM." },
+  { key: "environment", label: "Environment Setup", detail: "Installing runtime and deploying code." },
+  { key: "service", label: "Service Activation", detail: "Starting agent and configuring HTTPS." },
+  { key: "health", label: "Health Check", detail: "Verifying agent is responding." },
 ];
 
-function CircularProgress({ progress }: { progress: number }) {
+const LOG_COLORS: Record<string, string> = {
+  success: "text-status-running",
+  error: "text-claw-red",
+  warning: "text-claw-orange",
+  info: "text-text-tertiary",
+};
+
+function CircularProgress({ progress, activeLabel }: { progress: number; activeLabel: string }) {
   const size = 200;
   const strokeWidth = 8;
   const radius = (size - strokeWidth) / 2;
@@ -67,29 +77,89 @@ function CircularProgress({ progress }: { progress: number }) {
           <Text className="text-xl">%</Text>
         </Text>
         <Text className="font-mono text-[10px] text-claw-orange uppercase mt-1">
-          Initializing...
+          {activeLabel}
         </Text>
       </View>
     </View>
   );
 }
 
-function DeploymentView({ agentId, agentName }: { agentId: string; agentName: string }) {
-  const { data } = useDeploymentStatus(agentId);
-  const apiSteps = data?.steps ?? [];
+function TerminalLog({ logs }: { logs: DeploymentLogEntry[] }) {
+  const scrollRef = useRef<ScrollView>(null);
 
+  useEffect(() => {
+    // Auto-scroll to bottom when new logs arrive
+    scrollRef.current?.scrollToEnd({ animated: true });
+  }, [logs.length]);
+
+  const levelPrefix: Record<string, string> = {
+    success: "[SUCCESS]",
+    error: "[ERROR]",
+    warning: "[WARN]",
+    info: ">",
+  };
+
+  return (
+    <View className="bg-black/30 border border-surface-border rounded-lg relative overflow-hidden" style={{ maxHeight: 180 }}>
+      {isWeb && <View className="scan-line" />}
+      <ScrollView ref={scrollRef} style={{ padding: 12 }}>
+        {logs.length === 0 && (
+          <Text className="font-mono text-[10px] text-text-tertiary">
+            {">"} Waiting for deployment to start...
+          </Text>
+        )}
+        {logs.map((log, i) => (
+          <Text key={i} className={`font-mono text-[10px] ${LOG_COLORS[log.level] ?? "text-text-tertiary"}`}>
+            {levelPrefix[log.level] ?? ">"} {log.message}
+          </Text>
+        ))}
+      </ScrollView>
+    </View>
+  );
+}
+
+function DeploymentView({ agentId, agentName, onAbort, onRepair }: { agentId: string; agentName: string; onAbort: () => void; onRepair: () => void }) {
+  const { data } = useDeploymentStatus(agentId);
+  const apiSteps: DeploymentStep[] = data?.steps ?? [];
+  const apiLogs: DeploymentLogEntry[] = data?.logs ?? [];
+
+  // Find current step index from API data
   let currentStep = 0;
+  let activeLabel = "Initializing...";
   if (apiSteps.length > 0) {
-    const activeIdx = apiSteps.findIndex(
-      (s: Record<string, unknown>) => s.status === "active" || s.status === "in_progress"
-    );
-    const doneCount = apiSteps.filter(
-      (s: Record<string, unknown>) => s.status === "done" || s.status === "complete"
-    ).length;
-    currentStep = activeIdx >= 0 ? activeIdx : doneCount;
+    const activeIdx = apiSteps.findIndex((s) => s.status === "active");
+    const doneCount = apiSteps.filter((s) => s.status === "done").length;
+    const failedIdx = apiSteps.findIndex((s) => s.status === "failed");
+
+    if (failedIdx >= 0) {
+      currentStep = failedIdx;
+      activeLabel = "Failed";
+    } else if (activeIdx >= 0) {
+      currentStep = activeIdx;
+      const stepDef = DEPLOY_STEPS[activeIdx];
+      activeLabel = stepDef?.label ?? "Deploying...";
+    } else {
+      currentStep = doneCount;
+      activeLabel = doneCount >= DEPLOY_STEPS.length ? "Complete" : "Deploying...";
+    }
   }
 
-  const progress = Math.min(((currentStep + 0.5) / DEPLOY_STEPS.length) * 100, 100);
+  const progress = apiSteps.length > 0
+    ? Math.min(((currentStep + 0.5) / DEPLOY_STEPS.length) * 100, 100)
+    : 0;
+
+  // Get step status and detail from API data, falling back to static defaults
+  const getStepState = (stepKey: string, idx: number) => {
+    const apiStep = apiSteps.find((s) => s.key === stepKey);
+    const stepDef = DEPLOY_STEPS[idx];
+    if (!apiStep) {
+      return { status: "pending" as const, detail: stepDef.detail };
+    }
+    return {
+      status: apiStep.status,
+      detail: apiStep.detail ?? stepDef.detail,
+    };
+  };
 
   const containerStyle = isWeb
     ? ({
@@ -107,7 +177,7 @@ function DeploymentView({ agentId, agentName }: { agentId: string; agentName: st
       };
 
   return (
-    <View className="px-4 py-6">
+    <View className="flex-1">
       {/* Background effects (web) */}
       {isWeb && (
         <>
@@ -115,6 +185,7 @@ function DeploymentView({ agentId, agentName }: { agentId: string; agentName: st
           <View className="absolute inset-0 mesh-bg pointer-events-none" style={{ zIndex: 0 } as any} />
         </>
       )}
+      <View style={{ padding: 16, paddingVertical: 24, width: "100%", maxWidth: 1200, alignSelf: "center", flex: 1 } as any}>
       {/* Title */}
       <View className="items-center mb-8">
         <Text
@@ -145,28 +216,11 @@ function DeploymentView({ agentId, agentName }: { agentId: string; agentName: st
           {/* Left column — Circular Progress + Terminal */}
           <View>
             <View className="items-center mb-8">
-              <CircularProgress progress={progress} />
+              <CircularProgress progress={progress} activeLabel={activeLabel} />
             </View>
 
-            {/* Terminal log */}
-            <View className="bg-black/30 border border-surface-border rounded-lg p-3 relative overflow-hidden">
-              {isWeb && <View className="scan-line" />}
-              <Text className="font-mono text-[10px] text-status-running">
-                {">"} [SUCCESS] VM instance created (ID: vm-3Xv2)
-              </Text>
-              <Text className="font-mono text-[10px] text-status-running">
-                {">"} [SUCCESS] Network interface bound to 10.0.4.2
-              </Text>
-              <Text className="font-mono text-[10px] text-status-running">
-                {">"} Security groups applied
-              </Text>
-              <Text className="font-mono text-[10px] text-claw-orange">
-                {">"} [PENDING] Pulling Docker image liberclaw/agent-core:latest...
-              </Text>
-              <Text className="font-mono text-[10px] text-text-tertiary">
-                {">"} Waiting for container orchestration...
-              </Text>
-            </View>
+            {/* Terminal log — real data from API */}
+            <TerminalLog logs={apiLogs} />
           </View>
 
           {/* Right column — Timeline */}
@@ -194,14 +248,17 @@ function DeploymentView({ agentId, agentName }: { agentId: string; agentName: st
             />
 
             {DEPLOY_STEPS.map((step, i) => {
-              const isDone = i < currentStep;
-              const isCurrent = i === currentStep;
+              const state = getStepState(step.key, i);
+              const isDone = state.status === "done";
+              const isCurrent = state.status === "active";
+              const isFailed = state.status === "failed";
+              const isPending = state.status === "pending";
 
               return (
                 <View
                   key={step.key}
                   className="flex-row mb-5 last:mb-0"
-                  style={{ opacity: i > currentStep ? 0.5 : 1 }}
+                  style={{ opacity: isPending ? 0.5 : 1 }}
                 >
                   <View className="z-10">
                     {isDone ? (
@@ -210,6 +267,13 @@ function DeploymentView({ agentId, agentName }: { agentId: string; agentName: st
                         style={isWeb ? { boxShadow: "0 0 15px rgba(255,94,0,0.4)" } as any : undefined}
                       >
                         <MaterialIcons name="check" size={16} color="#ffffff" />
+                      </View>
+                    ) : isFailed ? (
+                      <View
+                        className="w-8 h-8 rounded-full bg-claw-red items-center justify-center"
+                        style={isWeb ? { boxShadow: "0 0 15px rgba(255,0,60,0.4)" } as any : undefined}
+                      >
+                        <MaterialIcons name="close" size={16} color="#ffffff" />
                       </View>
                     ) : isCurrent ? (
                       <View className="w-8 h-8 rounded-full bg-surface-base border-2 border-claw-orange items-center justify-center">
@@ -231,7 +295,7 @@ function DeploymentView({ agentId, agentName }: { agentId: string; agentName: st
                   </View>
 
                   <View className="ml-3 flex-1">
-                    <Text className={`text-base font-bold ${isDone || isCurrent ? "text-text-primary" : "text-text-secondary"}`}>
+                    <Text className={`text-base font-bold ${isPending ? "text-text-secondary" : "text-text-primary"}`}>
                       {step.label}
                     </Text>
                     {isDone && (
@@ -239,7 +303,15 @@ function DeploymentView({ agentId, agentName }: { agentId: string; agentName: st
                         <Text className="font-mono text-[10px] text-status-running uppercase mt-0.5">
                           {"✓ "}COMPLETE
                         </Text>
-                        <Text className="text-xs text-text-tertiary mt-0.5">{step.doneDetail}</Text>
+                        <Text className="text-xs text-text-tertiary mt-0.5">{state.detail}</Text>
+                      </View>
+                    )}
+                    {isFailed && (
+                      <View>
+                        <Text className="font-mono text-[10px] text-claw-red uppercase mt-0.5">
+                          {"✗ "}FAILED
+                        </Text>
+                        <Text className="text-xs text-claw-red/70 mt-0.5">{state.detail}</Text>
                       </View>
                     )}
                     {isCurrent && (
@@ -247,7 +319,7 @@ function DeploymentView({ agentId, agentName }: { agentId: string; agentName: st
                         <Text className="font-mono text-[10px] text-claw-orange uppercase mt-0.5">
                           IN PROGRESS
                         </Text>
-                        <Text className="text-xs text-text-tertiary mt-0.5">{step.detail}</Text>
+                        <Text className="text-xs text-text-tertiary mt-0.5">{state.detail}</Text>
                         {/* Progress bar for active step */}
                         <View className="mt-2 h-1 bg-surface-raised rounded-full overflow-hidden">
                           <View
@@ -255,14 +327,14 @@ function DeploymentView({ agentId, agentName }: { agentId: string; agentName: st
                             style={[
                               { width: "60%" },
                               isWeb
-                                ? { background: "linear-gradient(to right, #ff5e00, #ff003c)" } as any
+                                ? { background: "linear-gradient(to right, #ff5e00, #ff003c)", animation: "pulse 2s ease-in-out infinite" } as any
                                 : { backgroundColor: "#ff5e00" },
                             ]}
                           />
                         </View>
                       </View>
                     )}
-                    {!isDone && !isCurrent && (
+                    {isPending && (
                       <View>
                         <Text className="font-mono text-[10px] text-text-tertiary uppercase mt-0.5">
                           PENDING
@@ -282,13 +354,20 @@ function DeploymentView({ agentId, agentName }: { agentId: string; agentName: st
           <Text className="text-xs font-mono text-text-tertiary">
             SESSION ID: <Text className="text-text-secondary">0x{agentId.slice(0, 6)}...{agentId.slice(-4)}</Text>
           </Text>
-          <Pressable className="flex-row items-center gap-2">
-            <MaterialIcons name="cancel" size={16} color="rgba(255,0,60,0.7)" />
-            <Text className="text-sm font-mono text-claw-red/70 uppercase">Abort Deployment</Text>
-          </Pressable>
+          <View className="flex-row items-center gap-4">
+            <Pressable className="flex-row items-center gap-2" onPress={onRepair}>
+              <MaterialIcons name="refresh" size={16} color="rgba(255,94,0,0.7)" />
+              <Text className="text-sm font-mono text-claw-orange/70 uppercase">Repair</Text>
+            </Pressable>
+            <Pressable className="flex-row items-center gap-2" onPress={onAbort}>
+              <MaterialIcons name="cancel" size={16} color="rgba(255,0,60,0.7)" />
+              <Text className="text-sm font-mono text-claw-red/70 uppercase">Abort</Text>
+            </Pressable>
+          </View>
         </View>
       </View>
 
+      </View>
     </View>
   );
 }
@@ -296,12 +375,32 @@ function DeploymentView({ agentId, agentName }: { agentId: string; agentName: st
 export default function AgentDetailScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { data: agent, isLoading } = useAgent(id!);
+  const { data: agent, isLoading, refetch } = useAgent(id!);
   const deleteAgent = useDeleteAgent();
+  const [aborting, setAborting] = useState(false);
 
   const isDeploying =
     agent?.deployment_status === "pending" ||
     agent?.deployment_status === "deploying";
+
+  const handleAbort = async () => {
+    setAborting(true);
+    try {
+      await deleteAgent.mutateAsync(id!);
+      router.back();
+    } catch {
+      setAborting(false);
+    }
+  };
+
+  const handleRepair = async () => {
+    try {
+      await repairAgent(id!);
+      await refetch();
+    } catch {
+      await refetch();
+    }
+  };
 
   const handleDelete = () => {
     Alert.alert(
@@ -367,7 +466,7 @@ export default function AgentDetailScreen() {
       >
         {/* Deployment Progress (full-page takeover when deploying) */}
         {isDeploying ? (
-          <DeploymentView agentId={id!} agentName={agent.name} />
+          <DeploymentView agentId={id!} agentName={agent.name} onAbort={handleAbort} onRepair={handleRepair} />
         ) : (
           <View className="px-4 pt-4">
             {/* Status + Agent Icon */}

@@ -39,11 +39,24 @@ class AgentListResponse(BaseModel):
     total: int
 
 
+class DeploymentStepResponse(BaseModel):
+    key: str
+    status: str  # pending | active | done | failed
+    detail: str | None = None
+
+
+class DeploymentLogEntry(BaseModel):
+    timestamp: float
+    level: str  # info | success | error | warning
+    message: str
+
+
 class DeploymentStatusResponse(BaseModel):
     agent_id: uuid.UUID
     deployment_status: str
     vm_url: str | None
-    steps: list[dict] | None = None
+    steps: list[DeploymentStepResponse] = []
+    logs: list[DeploymentLogEntry] = []
 
 
 class AgentHealthResponse(BaseModel):

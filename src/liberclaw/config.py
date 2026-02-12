@@ -2,7 +2,13 @@
 
 from __future__ import annotations
 
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings
+
+
+def _shared(name: str) -> AliasChoices:
+    """Allow LIBERCLAW_<NAME> with fallback to bare <NAME> for shared bot vars."""
+    return AliasChoices(f"LIBERCLAW_{name}", name)
 
 
 class LiberClawSettings(BaseSettings):
@@ -42,13 +48,13 @@ class LiberClawSettings(BaseSettings):
     smtp_from: str = "LiberClaw <noreply@libertai.io>"
     smtp_use_tls: bool = True
 
-    # Aleph Cloud deployment
-    aleph_private_key: str = ""
-    aleph_ssh_pubkey: str = ""
-    aleph_ssh_privkey_path: str = "~/.ssh/id_rsa"
+    # Aleph Cloud deployment (falls back to unprefixed bot vars)
+    aleph_private_key: str = Field(default="", validation_alias=_shared("ALEPH_PRIVATE_KEY"))
+    aleph_ssh_pubkey: str = Field(default="", validation_alias=_shared("ALEPH_SSH_PUBKEY"))
+    aleph_ssh_privkey_path: str = Field(default="~/.ssh/id_rsa", validation_alias=_shared("ALEPH_SSH_PRIVKEY_PATH"))
 
-    # LibertAI
-    libertai_api_key: str = ""
+    # LibertAI (falls back to unprefixed bot var)
+    libertai_api_key: str = Field(default="", validation_alias=_shared("LIBERTAI_API_KEY"))
     libertai_api_base_url: str = "https://api.libertai.io/v1"
 
     # Frontend / CORS

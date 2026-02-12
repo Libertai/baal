@@ -474,36 +474,57 @@ class AlephDeployer:
         agent_secret: str,
         instance_hash: str,
         owner_chat_id: str = "",
+        on_progress=None,
     ) -> dict:
         """SSH into a VM and deploy the agent code + Caddy reverse proxy.
+
+        Args:
+            on_progress: Optional callback(step_key, status, detail) called at
+                each sub-step for real-time progress tracking.
 
         Returns dict with 'status' and 'vm_url'.
         """
         steps: list[dict] = []
 
+        def _notify(step_key: str, status: str, detail: str = "") -> None:
+            if on_progress:
+                on_progress(step_key, status, detail)
+
         # Wait for SSH to be ready (VMs can take 3-5 min to fully boot)
         logger.info(f"Waiting for SSH to be ready at {vm_ip}:{ssh_port}...")
+        _notify("ssh", "active", "Connecting to VM via SSH...")
+        ssh_start = time.monotonic()
         for attempt in range(30):  # 30 attempts × 10s = 5 minutes max
             code, out, err = await self._ssh_run(vm_ip, ssh_port, "echo ready", timeout=15)
             if code == 0 and "ready" in out:
-                logger.info(f"SSH ready after {(attempt+1)*10}s")
+                elapsed = int(time.monotonic() - ssh_start)
+                logger.info(f"SSH ready after {elapsed}s")
+                _notify("ssh", "done", f"SSH established after {elapsed}s")
                 break
             # Log progress every 5 attempts (~50 seconds)
             if attempt > 0 and attempt % 5 == 0:
-                logger.info(f"Still waiting for SSH... ({attempt+1}/30 attempts, {(attempt+1)*10}s elapsed)")
+                elapsed = int(time.monotonic() - ssh_start)
+                logger.info(f"Still waiting for SSH... ({attempt+1}/30 attempts, {elapsed}s elapsed)")
+                _notify("ssh", "active", f"SSH attempt {attempt+1}/30 ({elapsed}s elapsed)...")
             if attempt < 29:  # Don't sleep on last attempt
                 await asyncio.sleep(10)
         else:
+            _notify("ssh", "failed", "SSH not reachable after 5 minutes")
             return {"status": "error", "error": f"SSH not reachable after 5 minutes (tried {vm_ip}:{ssh_port})", "steps": steps}
 
         steps.append({"step": "ssh_connected", "success": True})
+
+        # ── Environment setup ──────────────────────────────────────────
+        _notify("environment", "active", "Checking for pre-installed dependencies...")
 
         # Install Python + deps (skip if venv already exists from prepare_vm)
         code, _, _ = await self._ssh_run(vm_ip, ssh_port, "test -x /opt/baal-agent/bin/python3", timeout=10)
         if code == 0:
             logger.info("Deps already installed, skipping")
+            _notify("environment", "active", "Dependencies pre-installed (pool). Deploying code...")
             steps.append({"step": "install_deps", "success": True, "skipped": True})
         else:
+            _notify("environment", "active", "Installing Python 3 and dependencies...")
             install_cmd = (
                 "apt-get update -qq && "
                 "apt-get install -y -qq python3 python3-pip python3-venv && "
@@ -513,7 +534,9 @@ class AlephDeployer:
             code, _, stderr = await self._ssh_run(vm_ip, ssh_port, install_cmd, timeout=300)
             steps.append({"step": "install_deps", "success": code == 0})
             if code != 0:
+                _notify("environment", "failed", f"Dependency install failed: {stderr[:100]}")
                 return {"status": "error", "error": f"Dep install failed: {stderr}", "steps": steps}
+            _notify("environment", "active", "Dependencies installed. Deploying agent code...")
 
         # Deploy agent code via tar pipe over SSH
         agent_dir = "/opt/baal-agent/app"
@@ -524,6 +547,7 @@ class AlephDeployer:
             vm_ip, ssh_port, agent_src.parent, "baal_agent", agent_dir
         )
         if code != 0:
+            _notify("environment", "failed", f"Code deploy failed: {stderr[:100]}")
             return {
                 "status": "error",
                 "error": f"Failed to deploy agent code: {stderr}",
@@ -540,6 +564,7 @@ class AlephDeployer:
         steps.append({"step": "write_agent_code", "success": True})
 
         # Write .env file
+        _notify("environment", "active", "Configuring environment...")
         env_content = (
             f"AGENT_NAME={agent_name}\n"
             f"SYSTEM_PROMPT={system_prompt}\n"
@@ -555,6 +580,10 @@ class AlephDeployer:
         cmd = _safe_write_file_command(env_content, f"{agent_dir}/.env")
         code, _, _ = await self._ssh_run(vm_ip, ssh_port, cmd)
         steps.append({"step": "write_env", "success": code == 0})
+        _notify("environment", "done", "Python env configured. Agent code deployed.")
+
+        # ── Service activation ─────────────────────────────────────────
+        _notify("service", "active", "Creating systemd service...")
 
         # Create systemd service
         service_content = textwrap.dedent(f"""\
@@ -584,11 +613,15 @@ class AlephDeployer:
         )
         steps.append({"step": "start_agent", "success": code == 0})
         if code != 0:
+            _notify("service", "failed", f"Service start failed: {stderr[:100]}")
             return {"status": "error", "error": f"Service start failed: {stderr}", "steps": steps}
+
+        _notify("service", "active", "Agent started. Looking up DNS subdomain...")
 
         # Look up 2n6.me subdomain
         subdomain = await self.lookup_subdomain(instance_hash)
         if not subdomain:
+            _notify("service", "failed", "Could not resolve 2n6.me subdomain")
             return {
                 "status": "error",
                 "error": "Could not resolve 2n6.me subdomain",
@@ -596,6 +629,7 @@ class AlephDeployer:
             }
 
         fqdn = f"{subdomain}.2n6.me"
+        _notify("service", "active", f"Subdomain: {fqdn}. Configuring HTTPS proxy...")
 
         # Install and configure Caddy
         caddy_install = (
@@ -607,8 +641,10 @@ class AlephDeployer:
         )
         code, _, _ = await self._ssh_run(vm_ip, ssh_port, "which caddy")
         if code != 0:
+            _notify("service", "active", "Installing Caddy reverse proxy...")
             code, _, stderr = await self._ssh_run(vm_ip, ssh_port, caddy_install, timeout=120)
             if code != 0:
+                _notify("service", "failed", f"Caddy install failed: {stderr[:100]}")
                 return {"status": "error", "error": f"Caddy install failed: {stderr}", "steps": steps}
 
         caddyfile = f"{fqdn} {{\n    reverse_proxy localhost:8080\n}}\n"
@@ -620,9 +656,11 @@ class AlephDeployer:
         )
         steps.append({"step": "caddy_proxy", "success": code == 0})
         if code != 0:
+            _notify("service", "failed", f"Caddy start failed: {stderr[:100]}")
             return {"status": "error", "error": f"Caddy start failed: {stderr}", "steps": steps}
 
         vm_url = f"https://{fqdn}"
+        _notify("service", "done", f"HTTPS active at {fqdn}")
         return {"status": "success", "vm_url": vm_url, "steps": steps}
 
     async def prepare_vm(

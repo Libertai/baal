@@ -45,6 +45,13 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
             raise
 
 
+def get_session_factory():
+    """Get the current session factory (for background tasks outside request lifecycle)."""
+    if _session_factory is None:
+        raise RuntimeError("Database engine not initialized. Call init_engine() first.")
+    return _session_factory
+
+
 def get_engine():
     """Get the current engine (for Alembic migrations)."""
     return _engine

@@ -12,14 +12,16 @@ from baal_core.encryption import decrypt
 from baal_core.proxy import health_check
 from liberclaw.auth.dependencies import get_current_user, get_settings
 from liberclaw.database.models import Agent, User
-from liberclaw.database.session import get_db, _session_factory
+from liberclaw.database.session import get_db, get_session_factory
 from liberclaw.schemas.agents import (
     AgentCreate,
     AgentHealthResponse,
     AgentListResponse,
     AgentResponse,
     AgentUpdate,
+    DeploymentLogEntry,
     DeploymentStatusResponse,
+    DeploymentStepResponse,
 )
 from liberclaw.services.agent_manager import (
     create_agent,
@@ -85,7 +87,7 @@ async def create_user_agent(
         deployer=deployer,
         libertai_api_key=settings.libertai_api_key,
         encryption_key=settings.encryption_key,
-        db_factory=_session_factory,
+        db_factory=get_session_factory(),
     )
 
     return AgentResponse.model_validate(agent)
@@ -176,14 +178,35 @@ async def get_deployment_status(
     db: AsyncSession = Depends(get_db),
 ):
     """Get deployment progress (poll during creation)."""
+    from liberclaw.services.deployment_progress import get_progress
+
     agent = await get_agent(db, agent_id, user.id)
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
+
+    progress = get_progress(agent.id)
+    steps = []
+    logs = []
+    if progress:
+        steps = [
+            DeploymentStepResponse(
+                key=s.key, status=s.status, detail=s.detail,
+            )
+            for s in progress.steps
+        ]
+        logs = [
+            DeploymentLogEntry(
+                timestamp=l.timestamp, level=l.level, message=l.message,
+            )
+            for l in progress.logs
+        ]
 
     return DeploymentStatusResponse(
         agent_id=agent.id,
         deployment_status=agent.deployment_status,
         vm_url=agent.vm_url,
+        steps=steps,
+        logs=logs,
     )
 
 
@@ -219,7 +242,7 @@ async def repair_agent(
         deployer=deployer,
         libertai_api_key=settings.libertai_api_key,
         encryption_key=settings.encryption_key,
-        db_factory=_session_factory,
+        db_factory=get_session_factory(),
     )
 
     return AgentResponse.model_validate(agent)
@@ -257,7 +280,7 @@ async def redeploy_agent(
         deployer=deployer,
         libertai_api_key=settings.libertai_api_key,
         encryption_key=settings.encryption_key,
-        db_factory=_session_factory,
+        db_factory=get_session_factory(),
     )
 
     return AgentResponse.model_validate(agent)

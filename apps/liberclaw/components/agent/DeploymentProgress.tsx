@@ -2,18 +2,20 @@ import React from 'react';
 import { View, Text, ActivityIndicator } from 'react-native';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useDeploymentStatus } from '@/lib/hooks/useDeployment';
+import type { DeploymentStep as ApiStep } from '@/lib/api/types';
 
-interface DeploymentStep {
+interface StepDef {
   label: string;
   key: string;
 }
 
-const STEPS: DeploymentStep[] = [
-  { key: 'pending', label: 'Queuing deployment' },
+const STEPS: StepDef[] = [
   { key: 'provisioning', label: 'Provisioning VM' },
-  { key: 'deploying', label: 'Deploying agent code' },
-  { key: 'configuring', label: 'Configuring HTTPS' },
-  { key: 'running', label: 'Live activation' },
+  { key: 'allocation', label: 'Network allocation' },
+  { key: 'ssh', label: 'Secure connection' },
+  { key: 'environment', label: 'Environment setup' },
+  { key: 'service', label: 'Service activation' },
+  { key: 'health', label: 'Health check' },
 ];
 
 interface DeploymentProgressProps {
@@ -22,17 +24,13 @@ interface DeploymentProgressProps {
 
 export default function DeploymentProgress({ agentId }: DeploymentProgressProps) {
   const { data } = useDeploymentStatus(agentId);
-  const apiSteps = data?.steps ?? [];
+  const apiSteps: ApiStep[] = data?.steps ?? [];
 
   // Determine current step from API data or default to 0
   let currentStep = 0;
   if (apiSteps.length > 0) {
-    const activeIdx = apiSteps.findIndex(
-      (s: Record<string, unknown>) => s.status === 'active' || s.status === 'in_progress'
-    );
-    const doneCount = apiSteps.filter(
-      (s: Record<string, unknown>) => s.status === 'done' || s.status === 'complete'
-    ).length;
+    const activeIdx = apiSteps.findIndex((s) => s.status === 'active');
+    const doneCount = apiSteps.filter((s) => s.status === 'done').length;
     currentStep = activeIdx >= 0 ? activeIdx : doneCount;
   }
 

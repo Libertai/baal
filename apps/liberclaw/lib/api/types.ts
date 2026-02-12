@@ -91,11 +91,24 @@ export interface AgentHealthResponse {
   vm_url: string | null;
 }
 
+export interface DeploymentStep {
+  key: string;
+  status: "pending" | "active" | "done" | "failed";
+  detail: string | null;
+}
+
+export interface DeploymentLogEntry {
+  timestamp: number;
+  level: "info" | "success" | "error" | "warning";
+  message: string;
+}
+
 export interface DeploymentStatus {
   agent_id: string;
   deployment_status: DeploymentStatusValue;
   vm_url: string | null;
-  steps?: Record<string, unknown>[] | null;
+  steps: DeploymentStep[];
+  logs: DeploymentLogEntry[];
 }
 
 // ── Chat ──────────────────────────────────────────────────────────────

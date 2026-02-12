@@ -114,11 +114,7 @@ export default function TabsLayout() {
   return (
     <View className="flex-1 flex-row bg-surface-base">
       <SidebarNav />
-      <View style={{ flex: 1, alignItems: "center" }}>
-        <View style={{ flex: 1, width: "100%", maxWidth: 1200 }}>
-          {tabs}
-        </View>
-      </View>
+      <View className="flex-1">{tabs}</View>
     </View>
   );
 }
