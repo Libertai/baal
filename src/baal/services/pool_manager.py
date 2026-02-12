@@ -239,13 +239,14 @@ class VMPool:
         stats = await self.get_stats()
         available = stats.get("available", 0)
         provisioning = stats.get("provisioning", 0)
-        total = stats.get("total", 0)
 
         # How many do we need?
         needed = self.min_size - available - provisioning
 
-        # Don't exceed max
-        can_create = self.max_size - total
+        # max_size caps warm + provisioning only (deployed VMs are the agent's
+        # concern, not the pool's — they shouldn't block new warm VMs)
+        pool_active = available + provisioning
+        can_create = self.max_size - pool_active
         to_create = min(needed, can_create)
 
         if to_create <= 0:
