@@ -20,6 +20,7 @@ from telegram.ext import (
 from baal.database.db import Database
 from baal.services.deployer import AlephDeployer
 from baal.services.encryption import decrypt, encrypt
+from baal_core.models import AVAILABLE_MODELS
 
 logger = logging.getLogger(__name__)
 
@@ -38,27 +39,6 @@ def _default_system_prompt(name: str) -> str:
         f"Be helpful, concise, and proactive. When given a task, break it down "
         f"and work through it step by step."
     )
-
-AVAILABLE_MODELS = {
-    "qwen3-coder-next": {
-        "name": "Qwen 3 Coder Next",
-        "emoji": "✨",
-        "description": "Latest coding model",
-        "best_for": "Code generation, debugging, technical tasks",
-        "context": "96K tokens",
-        "speed": "Fast",
-        "badges": ["Recommended"],
-    },
-    "glm-4.7": {
-        "name": "GLM 4.7",
-        "emoji": "💬",
-        "description": "General-purpose chat",
-        "best_for": "Conversations, research, creative writing",
-        "context": "128K tokens",
-        "speed": "Moderate",
-        "badges": ["Great for long documents"],
-    },
-}
 
 
 def _get_db(context: ContextTypes.DEFAULT_TYPE) -> Database:

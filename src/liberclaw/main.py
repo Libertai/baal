@@ -1,0 +1,77 @@
+"""LiberClaw API server — FastAPI app with lifespan, CORS, router mounting."""
+
+from __future__ import annotations
+
+import logging
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+from liberclaw.auth.dependencies import set_settings
+from liberclaw.config import LiberClawSettings
+from liberclaw.database.session import close_engine, init_engine
+from liberclaw.routers import agents, auth, chat, files, health, usage, users
+
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO,
+)
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Startup / shutdown lifecycle."""
+    settings: LiberClawSettings = app.state.settings
+
+    # Initialize database
+    init_engine(settings)
+    logger.info("Database engine initialized")
+
+    # Store settings for auth dependencies
+    set_settings(settings)
+
+    yield
+
+    # Shutdown
+    await close_engine()
+    logger.info("Database engine closed")
+
+
+def create_app(settings: LiberClawSettings | None = None) -> FastAPI:
+    """Create and configure the FastAPI application."""
+    if settings is None:
+        settings = LiberClawSettings()
+
+    app = FastAPI(
+        title="LiberClaw API",
+        description="AI agent management platform on Aleph Cloud",
+        version="0.1.0",
+        lifespan=lifespan,
+    )
+    app.state.settings = settings
+
+    # CORS
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.cors_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    # Mount routers under /api/v1
+    app.include_router(health.router, prefix="/api/v1")
+    app.include_router(auth.router, prefix="/api/v1")
+    app.include_router(agents.router, prefix="/api/v1")
+    app.include_router(chat.router, prefix="/api/v1")
+    app.include_router(files.router, prefix="/api/v1")
+    app.include_router(users.router, prefix="/api/v1")
+    app.include_router(usage.router, prefix="/api/v1")
+
+    return app
+
+
+# Default app instance for `uvicorn liberclaw.main:app`
+app = create_app()
