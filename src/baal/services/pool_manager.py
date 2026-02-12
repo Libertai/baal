@@ -308,8 +308,7 @@ class VMPool:
                 raise RuntimeError("Could not resolve 2n6.me subdomain")
 
             # Pre-install dependencies so deploy_agent_code() is fast
-            fqdn = f"{subdomain}.2n6.me"
-            prep_result = await self.deployer.prepare_vm(vm_ip, ssh_port, fqdn)
+            prep_result = await self.deployer.prepare_vm(vm_ip, ssh_port)
             if prep_result.get("status") != "success":
                 raise RuntimeError(
                     f"prepare_vm failed: {prep_result.get('error', 'unknown')}"

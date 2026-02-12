@@ -621,7 +621,7 @@ class AlephDeployer:
         return {"status": "success", "vm_url": vm_url, "steps": steps}
 
     async def prepare_vm(
-        self, vm_ip: str, ssh_port: int, fqdn: str
+        self, vm_ip: str, ssh_port: int
     ) -> dict:
         """Pre-install all dependencies on a blank VM (Python, Caddy, dirs).
 
@@ -661,16 +661,10 @@ class AlephDeployer:
         if code != 0:
             return {"status": "error", "error": f"Caddy install failed: {stderr}"}
 
-        # Write Caddyfile and start Caddy
-        caddyfile = f"{fqdn} {{\n    reverse_proxy localhost:8080\n}}\n"
-        cmd = _safe_write_file_command(caddyfile, "/etc/caddy/Caddyfile")
-        await self._ssh_run(vm_ip, ssh_port, cmd)
-        code, _, stderr = await self._ssh_run(
-            vm_ip, ssh_port,
-            "systemctl stop caddy 2>/dev/null; systemctl enable caddy && systemctl start caddy",
-        )
-        if code != 0:
-            return {"status": "error", "error": f"Caddy start failed: {stderr}"}
+        # Don't start Caddy with the real domain yet — ACME challenges will
+        # fail if the transparent proxy routing isn't fully propagated.
+        # deploy_agent_code() writes the Caddyfile and starts Caddy.
+        await self._ssh_run(vm_ip, ssh_port, "systemctl stop caddy 2>/dev/null")
 
         # Create agent dirs
         await self._ssh_run(
@@ -776,11 +770,17 @@ class AlephDeployer:
         if code != 0:
             return {"status": "error", "error": f"Service start failed: {stderr}", "steps": steps}
 
-        # Reload Caddy (already installed and configured by prepare_vm)
+        # Write Caddyfile and start Caddy (installed by prepare_vm, but not configured)
+        caddyfile = f"{fqdn} {{\n    reverse_proxy localhost:8080\n}}\n"
+        cmd = _safe_write_file_command(caddyfile, "/etc/caddy/Caddyfile")
+        await self._ssh_run(vm_ip, ssh_port, cmd)
         code, _, stderr = await self._ssh_run(
-            vm_ip, ssh_port, "systemctl reload caddy",
+            vm_ip, ssh_port,
+            "systemctl stop caddy 2>/dev/null; systemctl enable caddy && systemctl start caddy",
         )
-        steps.append({"step": "caddy_reload", "success": code == 0})
+        steps.append({"step": "caddy_start", "success": code == 0})
+        if code != 0:
+            return {"status": "error", "error": f"Caddy start failed: {stderr}", "steps": steps}
 
         vm_url = f"https://{fqdn}"
         return {"status": "success", "vm_url": vm_url, "steps": steps}
