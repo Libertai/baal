@@ -303,7 +303,18 @@ class VMPool:
             subdomain = await self.deployer.lookup_subdomain(instance_hash)
             vm_url = f"https://{subdomain}.2n6.me" if subdomain else ""
 
-            # Update pool entry
+            if not subdomain:
+                raise RuntimeError("Could not resolve 2n6.me subdomain")
+
+            # Pre-install dependencies so deploy_agent_code() is fast
+            fqdn = f"{subdomain}.2n6.me"
+            prep_result = await self.deployer.prepare_vm(vm_ip, ssh_port, fqdn)
+            if prep_result.get("status") != "success":
+                raise RuntimeError(
+                    f"prepare_vm failed: {prep_result.get('error', 'unknown')}"
+                )
+
+            # Update pool entry — only mark 'warm' after deps are installed
             await self._db.execute("""
                 UPDATE vm_pool SET
                     instance_hash = ?,
@@ -316,7 +327,7 @@ class VMPool:
             """, (instance_hash, vm_ip, vm_url, crn_url, ssh_port, pool_id))
             await self._db.commit()
 
-            logger.info(f"Provisioned pool VM: {instance_hash[:12]}... at {vm_ip}")
+            logger.info(f"Provisioned pool VM: {instance_hash[:12]}... at {vm_ip} (deps installed)")
 
         except Exception as e:
             logger.error(f"Failed to provision pool VM: {e}")

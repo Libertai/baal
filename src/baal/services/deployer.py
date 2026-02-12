@@ -620,6 +620,171 @@ class AlephDeployer:
         vm_url = f"https://{fqdn}"
         return {"status": "success", "vm_url": vm_url, "steps": steps}
 
+    async def prepare_vm(
+        self, vm_ip: str, ssh_port: int, fqdn: str
+    ) -> dict:
+        """Pre-install all dependencies on a blank VM (Python, Caddy, dirs).
+
+        Called during pool provisioning so deploy_agent_code() only needs
+        to push code + config (~15s instead of ~2 min).
+        """
+        # Quick SSH check (3 retries × 5s — VM should already be booted)
+        logger.info(f"prepare_vm: waiting for SSH at {vm_ip}:{ssh_port}...")
+        for attempt in range(3):
+            code, out, _ = await self._ssh_run(vm_ip, ssh_port, "echo ready", timeout=10)
+            if code == 0 and "ready" in out:
+                break
+            if attempt < 2:
+                await asyncio.sleep(5)
+        else:
+            return {"status": "error", "error": f"SSH not reachable at {vm_ip}:{ssh_port}"}
+
+        # Install Python + create venv + install deps
+        install_cmd = (
+            "apt-get update -qq && "
+            "apt-get install -y -qq python3 python3-pip python3-venv && "
+            "python3 -m venv /opt/baal-agent && "
+            "/opt/baal-agent/bin/pip install fastapi uvicorn openai aiosqlite pydantic-settings httpx"
+        )
+        code, _, stderr = await self._ssh_run(vm_ip, ssh_port, install_cmd, timeout=300)
+        if code != 0:
+            return {"status": "error", "error": f"Dep install failed: {stderr}"}
+
+        # Install Caddy
+        caddy_install = (
+            "apt-get install -y -qq debian-keyring debian-archive-keyring apt-transport-https curl && "
+            "curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg && "
+            "curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list && "
+            "apt-get update -qq && apt-get install -y -qq caddy"
+        )
+        code, _, stderr = await self._ssh_run(vm_ip, ssh_port, caddy_install, timeout=120)
+        if code != 0:
+            return {"status": "error", "error": f"Caddy install failed: {stderr}"}
+
+        # Write Caddyfile and start Caddy
+        caddyfile = f"{fqdn} {{\n    reverse_proxy localhost:8080\n}}\n"
+        cmd = _safe_write_file_command(caddyfile, "/etc/caddy/Caddyfile")
+        await self._ssh_run(vm_ip, ssh_port, cmd)
+        code, _, stderr = await self._ssh_run(
+            vm_ip, ssh_port,
+            "systemctl stop caddy 2>/dev/null; systemctl enable caddy && systemctl start caddy",
+        )
+        if code != 0:
+            return {"status": "error", "error": f"Caddy start failed: {stderr}"}
+
+        # Create agent dirs
+        await self._ssh_run(
+            vm_ip, ssh_port,
+            "mkdir -p /opt/baal-agent/app /opt/baal-agent/workspace/memory /opt/baal-agent/workspace/skills",
+        )
+
+        logger.info(f"prepare_vm: {vm_ip} ready (Python + Caddy installed)")
+        return {"status": "success"}
+
+    async def deploy_agent_code(
+        self,
+        vm_ip: str,
+        ssh_port: int,
+        fqdn: str,
+        agent_name: str,
+        system_prompt: str,
+        model: str,
+        libertai_api_key: str,
+        agent_secret: str,
+        owner_chat_id: str = "",
+    ) -> dict:
+        """Deploy only agent code to a VM already prepared by prepare_vm().
+
+        Much faster than deploy_agent() (~15s vs ~2 min) because deps are
+        already installed. Used for the fast pool path.
+        """
+        steps: list[dict] = []
+
+        # Quick SSH check (3 retries × 5s)
+        for attempt in range(3):
+            code, out, _ = await self._ssh_run(vm_ip, ssh_port, "echo ready", timeout=10)
+            if code == 0 and "ready" in out:
+                break
+            if attempt < 2:
+                await asyncio.sleep(5)
+        else:
+            return {"status": "error", "error": f"SSH not reachable at {vm_ip}:{ssh_port}", "steps": steps}
+
+        steps.append({"step": "ssh_connected", "success": True})
+
+        # Deploy agent code via tar pipe
+        agent_dir = "/opt/baal-agent/app"
+        agent_src = self._get_agent_source_dir()
+        code, _, stderr = await self._ssh_pipe_tar(
+            vm_ip, ssh_port, agent_src.parent, "baal_agent", agent_dir
+        )
+        if code != 0:
+            return {"status": "error", "error": f"Failed to deploy agent code: {stderr}", "steps": steps}
+
+        # Copy workspace template (no-clobber so re-deploys don't overwrite)
+        await self._ssh_run(
+            vm_ip, ssh_port,
+            f"cp -rn {agent_dir}/baal_agent/workspace /opt/baal-agent/workspace 2>/dev/null; "
+            f"mkdir -p /opt/baal-agent/workspace/memory /opt/baal-agent/workspace/skills",
+        )
+        steps.append({"step": "write_agent_code", "success": True})
+
+        # Write .env file
+        env_content = (
+            f"AGENT_NAME={agent_name}\n"
+            f"SYSTEM_PROMPT={system_prompt}\n"
+            f"MODEL={model}\n"
+            f"LIBERTAI_API_KEY={libertai_api_key}\n"
+            f"AGENT_SECRET={agent_secret}\n"
+            f"PORT=8080\n"
+            f"DB_PATH=/opt/baal-agent/app/agent.db\n"
+            f"WORKSPACE_PATH=/opt/baal-agent/workspace\n"
+            f"OWNER_CHAT_ID={owner_chat_id}\n"
+            f"HEARTBEAT_INTERVAL=1800\n"
+        )
+        cmd = _safe_write_file_command(env_content, f"{agent_dir}/.env")
+        code, _, _ = await self._ssh_run(vm_ip, ssh_port, cmd)
+        steps.append({"step": "write_env", "success": code == 0})
+
+        # Create systemd service
+        service_content = textwrap.dedent(f"""\
+            [Unit]
+            Description=Baal Agent - {agent_name}
+            After=network.target
+
+            [Service]
+            Type=simple
+            WorkingDirectory={agent_dir}
+            EnvironmentFile={agent_dir}/.env
+            Environment=PYTHONPATH={agent_dir}
+            ExecStart=/opt/baal-agent/bin/uvicorn baal_agent.main:app --host 127.0.0.1 --port 8080
+            Restart=always
+            RestartSec=5
+
+            [Install]
+            WantedBy=multi-user.target
+        """)
+        cmd = _safe_write_file_command(service_content, "/etc/systemd/system/baal-agent.service")
+        await self._ssh_run(vm_ip, ssh_port, cmd)
+
+        # Start/restart agent service
+        code, _, stderr = await self._ssh_run(
+            vm_ip, ssh_port,
+            "systemctl daemon-reload && systemctl enable baal-agent && systemctl restart baal-agent",
+        )
+        steps.append({"step": "start_agent", "success": code == 0})
+        if code != 0:
+            return {"status": "error", "error": f"Service start failed: {stderr}", "steps": steps}
+
+        # Reload Caddy (already installed and configured by prepare_vm)
+        code, _, stderr = await self._ssh_run(
+            vm_ip, ssh_port, "systemctl reload caddy",
+        )
+        steps.append({"step": "caddy_reload", "success": code == 0})
+
+        vm_url = f"https://{fqdn}"
+        return {"status": "success", "vm_url": vm_url, "steps": steps}
+
     def _get_agent_source_dir(self) -> Path:
         """Get path to the baal_agent source package."""
         return Path(__file__).resolve().parent.parent.parent / "baal_agent"
