@@ -633,16 +633,17 @@ class AlephDeployer:
         Called during pool provisioning so deploy_agent() skips the slow
         dep install steps (~15-20s instead of ~2 min).
         """
-        # Quick SSH check (3 retries × 5s — VM should already be booted)
+        # Wait for SSH to be ready (VMs can take 3-5 min to fully boot)
         logger.info(f"prepare_vm: waiting for SSH at {vm_ip}:{ssh_port}...")
-        for attempt in range(3):
-            code, out, _ = await self._ssh_run(vm_ip, ssh_port, "echo ready", timeout=10)
+        for attempt in range(30):  # 30 × 10s = 5 min max
+            code, out, _ = await self._ssh_run(vm_ip, ssh_port, "echo ready", timeout=15)
             if code == 0 and "ready" in out:
+                logger.info(f"prepare_vm: SSH ready after {(attempt+1)*10}s")
                 break
-            if attempt < 2:
-                await asyncio.sleep(5)
+            if attempt < 29:
+                await asyncio.sleep(10)
         else:
-            return {"status": "error", "error": f"SSH not reachable at {vm_ip}:{ssh_port}"}
+            return {"status": "error", "error": f"SSH not reachable at {vm_ip}:{ssh_port} after 5 min"}
 
         # Install Python + create venv + install deps
         install_cmd = (
