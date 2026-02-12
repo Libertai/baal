@@ -498,17 +498,22 @@ class AlephDeployer:
 
         steps.append({"step": "ssh_connected", "success": True})
 
-        # Install Python + deps
-        install_cmd = (
-            "apt-get update -qq && "
-            "apt-get install -y -qq python3 python3-pip python3-venv && "
-            "python3 -m venv /opt/baal-agent && "
-            "/opt/baal-agent/bin/pip install fastapi uvicorn openai aiosqlite pydantic-settings httpx"
-        )
-        code, _, stderr = await self._ssh_run(vm_ip, ssh_port, install_cmd, timeout=300)
-        steps.append({"step": "install_deps", "success": code == 0})
-        if code != 0:
-            return {"status": "error", "error": f"Dep install failed: {stderr}", "steps": steps}
+        # Install Python + deps (skip if venv already exists from prepare_vm)
+        code, _, _ = await self._ssh_run(vm_ip, ssh_port, "test -x /opt/baal-agent/bin/python3", timeout=10)
+        if code == 0:
+            logger.info("Deps already installed, skipping")
+            steps.append({"step": "install_deps", "success": True, "skipped": True})
+        else:
+            install_cmd = (
+                "apt-get update -qq && "
+                "apt-get install -y -qq python3 python3-pip python3-venv && "
+                "python3 -m venv /opt/baal-agent && "
+                "/opt/baal-agent/bin/pip install fastapi uvicorn openai aiosqlite pydantic-settings httpx"
+            )
+            code, _, stderr = await self._ssh_run(vm_ip, ssh_port, install_cmd, timeout=300)
+            steps.append({"step": "install_deps", "success": code == 0})
+            if code != 0:
+                return {"status": "error", "error": f"Dep install failed: {stderr}", "steps": steps}
 
         # Deploy agent code via tar pipe over SSH
         agent_dir = "/opt/baal-agent/app"

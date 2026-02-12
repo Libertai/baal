@@ -1182,17 +1182,16 @@ async def _deploy_agent_fast(
             crn_url=pooled_vm.crn_url,
         )
 
-        # Deploy only agent code (deps already installed by prepare_vm)
-        fqdn = pooled_vm.vm_url.removeprefix("https://")
-        deploy_result = await deployer.deploy_agent_code(
+        # Deploy agent code via SSH (deps pre-installed by prepare_vm → fast skip)
+        deploy_result = await deployer.deploy_agent(
             vm_ip=pooled_vm.vm_ip,
             ssh_port=pooled_vm.ssh_port,
-            fqdn=fqdn,
             agent_name=name,
             system_prompt=system_prompt,
             model=model,
             libertai_api_key=libertai_api_key,
             agent_secret=agent_secret,
+            instance_hash=pooled_vm.instance_hash,
             owner_chat_id=str(chat_id),
         )
 
