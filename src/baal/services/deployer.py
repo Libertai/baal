@@ -652,7 +652,7 @@ class AlephDeployer:
             "python3 -m venv /opt/baal-agent && "
             "/opt/baal-agent/bin/pip install fastapi uvicorn openai aiosqlite pydantic-settings httpx"
         )
-        code, _, stderr = await self._ssh_run(vm_ip, ssh_port, install_cmd, timeout=300)
+        code, _, stderr = await self._ssh_run(vm_ip, ssh_port, install_cmd, timeout=600)
         if code != 0:
             return {"status": "error", "error": f"Dep install failed: {stderr}"}
 
