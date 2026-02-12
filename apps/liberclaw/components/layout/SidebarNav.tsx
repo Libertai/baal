@@ -4,24 +4,10 @@ import { Pressable, Text, View, ViewStyle } from "react-native";
 
 import ClawLogo from "@/components/ui/ClawLogo";
 import { useAuth } from "@/lib/auth/provider";
+import { useAgents } from "@/lib/hooks/useAgents";
 
 type WebPressableState = { hovered?: boolean; pressed: boolean };
 type WebStyle = ViewStyle & Record<string, unknown>;
-
-const NAV_ITEMS = [
-  {
-    label: "Agents",
-    icon: "smart-toy" as const,
-    href: "/(tabs)/",
-    status: "ONLINE",
-  },
-  {
-    label: "Chat",
-    icon: "chat-bubble-outline" as const,
-    href: "/(tabs)/chat",
-    status: "IDLE",
-  },
-];
 
 const SYSTEM_ITEMS = [
   { label: "Settings", icon: "settings" as const, href: "/(tabs)/settings" },
@@ -64,6 +50,10 @@ export default function SidebarNav(): React.JSX.Element {
   const pathname = usePathname();
   const router = useRouter();
   const { user } = useAuth();
+  const { data: agentsData } = useAgents();
+  const agents = agentsData?.agents ?? [];
+  const runningAgents = agents.filter((a: any) => a.deployment_status === "running");
+  const otherAgents = agents.filter((a: any) => a.deployment_status !== "running");
 
   return (
     <View
@@ -111,17 +101,18 @@ export default function SidebarNav(): React.JSX.Element {
 
       {/* Nav items */}
       <View className="px-2 flex-1">
-        {NAV_ITEMS.map((item) => {
-          const active = isActiveRoute(pathname, item.href);
+        {/* Running agents */}
+        {runningAgents.map((agent: any) => {
+          const isActive = pathname.includes(`/agent/${agent.id}`) ||
+            (pathname.includes("/chat"));
 
-          if (active) {
+          if (isActive) {
             return (
               <Pressable
-                key={item.href}
-                onPress={() => router.push(item.href as never)}
+                key={agent.id}
+                onPress={() => router.push(`/agent/${agent.id}/chat` as never)}
                 className="flex-row items-center px-3 py-2.5 rounded-lg mb-1 bg-claw-orange/10 border border-claw-orange/30 relative overflow-hidden"
               >
-                {/* Right-edge orange bar */}
                 <View
                   style={[
                     {
@@ -136,26 +127,14 @@ export default function SidebarNav(): React.JSX.Element {
                     { boxShadow: "0 0 8px rgba(255,94,0,0.6)" } as WebStyle,
                   ]}
                 />
-
-                {/* Icon container */}
                 <View className="w-8 h-8 rounded bg-surface-raised border border-claw-orange/20 items-center justify-center">
-                  <MaterialIcons
-                    name={item.icon}
-                    size={18}
-                    color="#ff5e00"
-                  />
+                  <MaterialIcons name="psychology" size={18} color="#ff5e00" />
                 </View>
-
-                {/* Label and status */}
                 <View className="ml-3 flex-1">
-                  <Text className="font-bold text-sm text-white">
-                    {item.label}
-                  </Text>
+                  <Text className="font-bold text-sm text-white" numberOfLines={1}>{agent.name}</Text>
                   <View className="flex-row items-center gap-1.5 mt-0.5">
                     <PulseDot />
-                    <Text className="text-[10px] text-claw-orange font-mono">
-                      ONLINE
-                    </Text>
+                    <Text className="text-[10px] text-claw-orange font-mono">ONLINE</Text>
                   </View>
                 </View>
               </Pressable>
@@ -164,8 +143,8 @@ export default function SidebarNav(): React.JSX.Element {
 
           return (
             <Pressable
-              key={item.href}
-              onPress={() => router.push(item.href as never)}
+              key={agent.id}
+              onPress={() => router.push(`/agent/${agent.id}/chat` as never)}
               style={(state) => [
                 {
                   flexDirection: "row",
@@ -180,23 +159,78 @@ export default function SidebarNav(): React.JSX.Element {
                 },
               ]}
             >
-              {/* Icon container */}
               <View className="w-8 h-8 rounded bg-surface-raised border border-white/10 items-center justify-center">
-                <MaterialIcons name={item.icon} size={18} color="#64748b" />
+                <MaterialIcons name="smart-toy" size={18} color="#64748b" />
               </View>
-
-              {/* Label and status */}
               <View className="ml-3 flex-1">
-                <Text className="font-medium text-sm text-slate-400">
-                  {item.label}
-                </Text>
-                <Text className="text-[10px] text-slate-500 font-mono mt-0.5">
-                  {item.status}
-                </Text>
+                <Text className="font-medium text-sm text-slate-400" numberOfLines={1}>{agent.name}</Text>
+                <Text className="text-[10px] text-slate-500 font-mono mt-0.5">IDLE</Text>
               </View>
             </Pressable>
           );
         })}
+
+        {/* Other agents (stopped/failed) */}
+        {otherAgents.length > 0 && otherAgents.map((agent: any) => (
+          <Pressable
+            key={agent.id}
+            onPress={() => router.push(`/agent/${agent.id}` as never)}
+            style={(state) => [
+              {
+                flexDirection: "row",
+                alignItems: "center",
+                paddingHorizontal: 12,
+                paddingVertical: 10,
+                borderRadius: 8,
+                marginBottom: 4,
+              },
+              (state as WebPressableState).hovered && {
+                backgroundColor: "rgba(255,255,255,0.05)",
+              },
+            ]}
+          >
+            <View className="w-8 h-8 rounded bg-surface-raised border border-white/10 items-center justify-center">
+              <MaterialIcons name="smart-toy" size={18} color="#64748b" />
+            </View>
+            <View className="ml-3 flex-1">
+              <Text className="font-medium text-sm text-slate-400" numberOfLines={1}>{agent.name}</Text>
+              <Text className="text-[10px] text-slate-500 font-mono mt-0.5">
+                {agent.deployment_status === "failed" ? "FAILED" : "SLEEPING"}
+              </Text>
+            </View>
+          </Pressable>
+        ))}
+
+        {/* Dashboard link */}
+        <Pressable
+          onPress={() => router.push("/(tabs)/" as never)}
+          style={(state) => [
+            {
+              flexDirection: "row",
+              alignItems: "center",
+              paddingHorizontal: 12,
+              paddingVertical: 10,
+              borderRadius: 8,
+              marginBottom: 4,
+              marginTop: 8,
+            },
+            (state as WebPressableState).hovered && {
+              backgroundColor: "rgba(255,255,255,0.05)",
+            },
+            isActiveRoute(pathname, "/(tabs)/") && {
+              backgroundColor: "rgba(255,94,0,0.1)",
+              borderWidth: 1,
+              borderColor: "rgba(255,94,0,0.3)",
+            },
+          ]}
+        >
+          <View className="w-8 h-8 rounded bg-surface-raised border border-white/10 items-center justify-center">
+            <MaterialIcons name="dashboard" size={18} color={isActiveRoute(pathname, "/(tabs)/") ? "#ff5e00" : "#64748b"} />
+          </View>
+          <View className="ml-3 flex-1">
+            <Text className={`font-medium text-sm ${isActiveRoute(pathname, "/(tabs)/") ? "text-white" : "text-slate-400"}`}>Dashboard</Text>
+          </View>
+        </Pressable>
 
         {/* System section */}
         <View className="mt-8 mb-3 px-3">

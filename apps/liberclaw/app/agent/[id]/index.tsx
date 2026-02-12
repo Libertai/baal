@@ -1,4 +1,4 @@
-import { Platform, View, Text, TouchableOpacity, ScrollView, Alert, ActivityIndicator } from "react-native";
+import { Platform, View, Text, TouchableOpacity, ScrollView, Alert, ActivityIndicator, Pressable } from "react-native";
 import { useRouter, useLocalSearchParams, Stack } from "expo-router";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import Svg, { Circle } from "react-native-svg";
@@ -30,6 +30,20 @@ function CircularProgress({ progress }: { progress: number }) {
 
   return (
     <View style={{ width: size, height: size, alignItems: "center", justifyContent: "center" }}>
+      {/* Spinning dashed ring */}
+      {isWeb && (
+        <View
+          className="absolute inset-0 rounded-full animate-spin-slow"
+          style={{ border: "1px dashed rgba(255,255,255,0.1)" } as any}
+        />
+      )}
+      {/* Inner orange blur pulse */}
+      {isWeb && (
+        <View
+          className="absolute rounded-full"
+          style={{ inset: 16, backgroundColor: "rgba(255,94,0,0.05)", filter: "blur(20px)", animation: "pulse 2s ease-in-out infinite" } as any}
+        />
+      )}
       <Svg width={size} height={size} style={{ transform: [{ rotate: "-90deg" }] }}>
         <Circle
           cx={size / 2} cy={size / 2} r={radius}
@@ -93,6 +107,13 @@ function DeploymentView({ agentId, agentName }: { agentId: string; agentName: st
 
   return (
     <View className="px-4 py-6">
+      {/* Background effects (web) */}
+      {isWeb && (
+        <>
+          <View className="absolute inset-0 hero-glow pointer-events-none" style={{ zIndex: 0 } as any} />
+          <View className="absolute inset-0 mesh-bg pointer-events-none" style={{ zIndex: 0 } as any} />
+        </>
+      )}
       {/* Title */}
       <View className="items-center mb-8">
         <Text
@@ -108,6 +129,13 @@ function DeploymentView({ agentId, agentName }: { agentId: string; agentName: st
       </View>
 
       <View style={[containerStyle, { padding: isWeb ? 32 : 20, overflow: "hidden" }]}>
+        {/* Corner blur blobs */}
+        {isWeb && (
+          <>
+            <View style={{ position: "absolute", top: 0, right: 0, width: 256, height: 256, backgroundColor: "rgba(255,94,0,0.05)", borderRadius: 9999, filter: "blur(60px)" } as any} />
+            <View style={{ position: "absolute", bottom: 0, left: 0, width: 256, height: 256, backgroundColor: "rgba(255,0,60,0.05)", borderRadius: 9999, filter: "blur(60px)" } as any} />
+          </>
+        )}
         {/* Circular Progress */}
         <View className="items-center mb-8">
           <CircularProgress progress={progress} />
@@ -158,6 +186,12 @@ function DeploymentView({ agentId, agentName }: { agentId: string; agentName: st
                   ) : isCurrent ? (
                     <View className="w-8 h-8 rounded-full bg-surface-base border-2 border-claw-orange items-center justify-center">
                       <View className="w-3 h-3 bg-claw-orange rounded-full" />
+                      {isWeb && (
+                        <View
+                          className="absolute w-3 h-3 bg-claw-orange rounded-full"
+                          style={{ animation: "ping 1s cubic-bezier(0, 0, 0.2, 1) infinite" } as any}
+                        />
+                      )}
                     </View>
                   ) : (
                     <View className="w-8 h-8 rounded-full bg-surface-base border border-surface-border items-center justify-center">
@@ -190,7 +224,8 @@ function DeploymentView({ agentId, agentName }: { agentId: string; agentName: st
         </View>
 
         {/* Terminal log */}
-        <View className="mt-6 bg-black/30 border border-surface-border rounded-lg p-3">
+        <View className="mt-6 bg-black/30 border border-surface-border rounded-lg p-3 relative overflow-hidden">
+          {isWeb && <View className="scan-line" />}
           <Text className="font-mono text-[10px] text-status-running">
             {">"} [SUCCESS] VM provisioning initiated
           </Text>
@@ -204,6 +239,17 @@ function DeploymentView({ agentId, agentName }: { agentId: string; agentName: st
             {">"} Waiting for health check...
           </Text>
         </View>
+      </View>
+
+      {/* Footer */}
+      <View className="mt-6 flex-row justify-between items-center px-2">
+        <Text className="text-xs font-mono text-text-tertiary">
+          SESSION ID: <Text className="text-text-secondary">0x{agentId.slice(0, 6)}...{agentId.slice(-4)}</Text>
+        </Text>
+        <Pressable className="flex-row items-center gap-2">
+          <MaterialIcons name="cancel" size={16} color="rgba(255,0,60,0.7)" />
+          <Text className="text-sm font-mono text-claw-red/70 uppercase">Abort Deployment</Text>
+        </Pressable>
       </View>
     </View>
   );
@@ -278,7 +324,7 @@ export default function AgentDetailScreen() {
         }}
       />
       <ScrollView
-        className={`flex-1 bg-surface-base ${isWeb ? "mesh-bg" : ""}`}
+        className="flex-1 bg-surface-base"
         contentContainerStyle={{ paddingBottom: 32 }}
       >
         {/* Deployment Progress (full-page takeover when deploying) */}

@@ -42,6 +42,16 @@ export default function TabsLayout() {
       }}
     >
       <Tabs.Screen
+        name="live"
+        options={{
+          title: "Live",
+          tabBarIcon: ({ color }) => (
+            <MaterialIcons name="sensors" size={24} color={color} />
+          ),
+          href: isDesktopWeb ? null : "/(tabs)/live",
+        }}
+      />
+      <Tabs.Screen
         name="index"
         options={{
           title: "Agents",
@@ -61,6 +71,27 @@ export default function TabsLayout() {
               color={color}
             />
           ),
+          href: isDesktopWeb ? "/(tabs)/chat" : null,
+        }}
+      />
+      <Tabs.Screen
+        name="history"
+        options={{
+          title: "History",
+          tabBarIcon: ({ color }) => (
+            <MaterialIcons name="history" size={24} color={color} />
+          ),
+          href: isDesktopWeb ? null : "/(tabs)/history",
+        }}
+      />
+      <Tabs.Screen
+        name="profile"
+        options={{
+          title: "Profile",
+          tabBarIcon: ({ color }) => (
+            <MaterialIcons name="person-outline" size={24} color={color} />
+          ),
+          href: isDesktopWeb ? null : "/(tabs)/profile",
         }}
       />
       <Tabs.Screen
@@ -70,6 +101,7 @@ export default function TabsLayout() {
           tabBarIcon: ({ color }) => (
             <MaterialIcons name="settings" size={24} color={color} />
           ),
+          href: isDesktopWeb ? "/(tabs)/settings" : null,
         }}
       />
     </Tabs>

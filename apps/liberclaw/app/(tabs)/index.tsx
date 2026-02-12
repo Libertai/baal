@@ -29,7 +29,7 @@ const MODEL_BRANDS: Record<string, string> = {
 const ICON_COLORS: string[] = [
   "#ff5e00",
   "#00e676",
-  "#448aff",
+  "#ff8533",
   "#e040fb",
   "#ffab00",
   "#00bcd4",
@@ -451,7 +451,7 @@ export default function AgentDashboard(): React.JSX.Element {
     : "bg-surface-raised rounded-full border border-surface-border";
 
   return (
-    <View className={`flex-1 bg-surface-base ${isWeb ? "mesh-bg" : ""}`}>
+    <View className="flex-1 bg-surface-base">
       <FlatList
         data={filteredAgents}
         keyExtractor={(item) => item.id}

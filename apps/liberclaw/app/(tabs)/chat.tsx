@@ -454,37 +454,53 @@ export default function ChatTab(): React.JSX.Element {
       behavior={Platform.OS === "ios" ? "padding" : undefined}
       keyboardVerticalOffset={90}
     >
-      {/* Header with agent name */}
-      <View className="px-4 py-3 border-b border-surface-border bg-surface-raised flex-row items-center justify-between">
-        <TouchableOpacity
-          onPress={() => setSelectedAgentId(null)}
-          className="flex-row items-center"
-        >
-          <MaterialIcons name="chevron-left" size={20} color="#ff5e00" />
-          <Text className="text-claw-orange text-sm ml-1">Switch</Text>
-        </TouchableOpacity>
-        <View className="flex-row items-center">
+      {/* Subtle texture overlays (web) */}
+      {Platform.OS === "web" && (
+        <>
+          <View className="absolute inset-0 carbon-fiber pointer-events-none" style={{ zIndex: 0 } as any} />
           <View
-            className="w-6 h-6 rounded items-center justify-center mr-2"
-            style={[
-              { backgroundColor: "#ff5e00" },
-              Platform.OS === "web" &&
-                ({ backgroundImage: "linear-gradient(to bottom right, #ff5e00, #dc2626)" } as any),
-            ]}
-          >
-            <MaterialIcons name="smart-toy" size={14} color="#ffffff" />
+            className="absolute inset-0 pointer-events-none"
+            style={{ zIndex: 0, backgroundImage: "linear-gradient(to right, #2d2830 1px, transparent 1px), linear-gradient(to bottom, #2d2830 1px, transparent 1px)", backgroundSize: "40px 40px", opacity: 0.03 } as any}
+          />
+        </>
+      )}
+
+      {/* Header with agent name + badges */}
+      <View
+        className="px-6 py-3 border-b border-surface-border flex-row items-center justify-between"
+        style={[
+          { backgroundColor: "rgba(10, 8, 16, 0.95)" },
+          Platform.OS === "web" && { backdropFilter: "blur(8px)" } as any,
+        ]}
+      >
+        <View className="flex-row items-center gap-4">
+          <View>
+            <View className="flex-row items-center gap-2">
+              <Text className="text-white font-bold text-lg">{selectedAgent?.name ?? "Chat"}</Text>
+              <View className="px-2 py-0.5 rounded bg-claw-orange/20 border border-claw-orange/40">
+                <Text className="text-claw-orange text-[10px] font-mono uppercase tracking-wide">Autonomous</Text>
+              </View>
+            </View>
+            <Text className="text-xs text-text-tertiary font-mono">
+              Running on Node: <Text className="text-claw-orange">LC-{selectedAgentId?.slice(0, 4).toUpperCase()}</Text>
+            </Text>
           </View>
-          <Text className="text-base font-bold text-text-primary">
-            {selectedAgent?.name ?? "Chat"}
-          </Text>
         </View>
-        <TouchableOpacity
-          onPress={() => router.push(`/agent/${selectedAgentId}/chat`)}
-          className="flex-row items-center"
-        >
-          <Text className="text-claw-orange text-sm mr-1">Full</Text>
-          <MaterialIcons name="open-in-new" size={16} color="#ff5e00" />
-        </TouchableOpacity>
+        <View className="flex-row items-center gap-4">
+          <View className="flex-row items-center gap-2 px-3 py-1.5 rounded-full bg-black border border-surface-border">
+            <View
+              className="w-2 h-2 rounded-full bg-claw-orange"
+              style={Platform.OS === "web" ? { animation: "pulse 2s ease-in-out infinite", boxShadow: "0 0 8px #ff5e00" } as any : undefined}
+            />
+            <Text className="text-xs font-mono text-text-secondary">NETWORK STABLE</Text>
+          </View>
+          <TouchableOpacity onPress={() => setSelectedAgentId(null)}>
+            <MaterialIcons name="swap-horiz" size={20} color="#8a8494" />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => router.push(`/agent/${selectedAgentId}/chat`)}>
+            <MaterialIcons name="open-in-new" size={20} color="#8a8494" />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Messages */}
@@ -518,14 +534,16 @@ export default function ChatTab(): React.JSX.Element {
 
       {/* Input area */}
       <View className="border-t border-surface-border">
-        {/* Glow backdrop on web */}
+        {/* Orange gradient glow behind input (web) */}
         {Platform.OS === "web" && (
           <View
-            className="absolute -top-1 left-4 right-4 h-1 rounded-full"
-            style={[
-              { opacity: 0.3 },
-              { backgroundImage: "linear-gradient(to right, #ff5e00, #dc2626)", filter: "blur(8px)" } as any,
-            ]}
+            className="absolute -inset-0.5 rounded-xl pointer-events-none"
+            style={{
+              background: "linear-gradient(to right, #ff5e00, #dc2626)",
+              opacity: 0.2,
+              filter: "blur(12px)",
+              zIndex: 0,
+            } as any}
           />
         )}
 
@@ -590,6 +608,16 @@ export default function ChatTab(): React.JSX.Element {
             </TouchableOpacity>
           </View>
         </View>
+
+        {/* Status footer */}
+        {Platform.OS === "web" && (
+          <View className="py-2 items-center">
+            <Text className="text-[10px] font-mono uppercase tracking-wider text-text-tertiary">
+              LiberClaw Autonomous Environment v1.0.0 •{" "}
+              <Text className="text-claw-orange">System Secure</Text>
+            </Text>
+          </View>
+        )}
       </View>
     </KeyboardAvoidingView>
   );

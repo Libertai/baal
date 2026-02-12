@@ -58,15 +58,26 @@
     background: radial-gradient(circle at 50% 30%, rgba(255, 94, 0, 0.12) 0%, transparent 60%);
   }
 
-  /* Scan line animation for deployment */
+  /* Scan line animation for deployment / preview panels */
   .scan-line {
-    background: linear-gradient(to bottom, transparent, rgba(255, 94, 0, 0.3), transparent);
-    animation: scan 4s linear infinite;
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 2px;
+    background: rgba(255, 94, 0, 0.8);
+    box-shadow: 0 0 15px rgba(255, 94, 0, 0.9);
+    animation: scan 3s ease-in-out infinite;
+    z-index: 10;
+    opacity: 0.5;
+    pointer-events: none;
   }
 
   @keyframes scan {
-    0% { transform: translateY(-100%); }
-    100% { transform: translateY(100%); }
+    0% { top: 0%; opacity: 0; }
+    10% { opacity: 0.8; }
+    90% { opacity: 0.8; }
+    100% { top: 100%; opacity: 0; }
   }
 
   /* Subtle pulse for status dots */
@@ -124,6 +135,36 @@
   .typing-dot-1 { animation-delay: -0.32s; }
   .typing-dot-2 { animation-delay: -0.16s; }
   .typing-dot-3 { animation-delay: 0s; }
+
+  /* Carbon fiber subtle texture overlay (web only) */
+  .carbon-fiber {
+    background-image:
+      repeating-linear-gradient(
+        0deg,
+        rgba(255, 255, 255, 0.03) 0px,
+        rgba(255, 255, 255, 0.03) 1px,
+        transparent 1px,
+        transparent 2px
+      ),
+      repeating-linear-gradient(
+        90deg,
+        rgba(255, 255, 255, 0.03) 0px,
+        rgba(255, 255, 255, 0.03) 1px,
+        transparent 1px,
+        transparent 2px
+      );
+    background-size: 4px 4px;
+  }
+
+  /* Slow spin for deployment ring */
+  @keyframes spin-slow {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+
+  .animate-spin-slow {
+    animation: spin-slow 8s linear infinite;
+  }
 
   /* Grid pattern for map/deployment backgrounds */
   .map-grid {
