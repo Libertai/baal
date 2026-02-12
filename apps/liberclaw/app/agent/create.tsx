@@ -17,7 +17,7 @@ const isWeb = Platform.OS === "web";
 
 const STEPS = [
   { key: "identity", label: "Identity" },
-  { key: "prompt", label: "Prompt" },
+  { key: "capabilities", label: "Capabilities" },
   { key: "model", label: "Model" },
   { key: "review", label: "Review" },
 ];
@@ -80,12 +80,20 @@ function DeploymentPreview({ name, model }: { name: string; model: string }): Re
           </View>
           <View className="gap-3">
             <View className="flex-row justify-between">
+              <Text className="text-text-tertiary text-xs font-mono">Role:</Text>
+              <Text className="text-text-primary text-xs font-mono">Trader / Analyst</Text>
+            </View>
+            <View className="flex-row justify-between">
               <Text className="text-text-tertiary text-xs font-mono">Model:</Text>
               <Text className="text-claw-orange text-xs font-mono">{brand}</Text>
             </View>
             <View className="flex-row justify-between">
               <Text className="text-text-tertiary text-xs font-mono">Network:</Text>
               <Text className="text-claw-orange text-xs font-mono">LiberClaw Mainnet</Text>
+            </View>
+            <View className="flex-row justify-between">
+              <Text className="text-text-tertiary text-xs font-mono">Est. Cost:</Text>
+              <Text className="text-text-primary text-xs font-mono">0.04 ETH / day</Text>
             </View>
           </View>
         </View>
@@ -135,25 +143,33 @@ function DeploymentPreview({ name, model }: { name: string; model: string }): Re
 
 function ExecutionParams(): React.JSX.Element {
   return (
-    <View className="mt-8">
-      <Text className="font-mono text-sm text-text-secondary uppercase mb-6">Execution Parameters</Text>
+    <View className="mt-8 pt-8 border-t border-surface-border">
+      <Text className="font-mono text-xs text-text-tertiary uppercase tracking-wider mb-6">Execution Parameters</Text>
       <View className="gap-6">
         <View>
-          <View className="flex-row justify-between mb-2">
+          <View className="flex-row justify-between mb-3">
             <Text className="text-sm font-bold text-text-primary">Aggression Level</Text>
             <Text className="text-claw-orange font-mono text-sm">75%</Text>
           </View>
-          <View className="h-2 bg-surface-raised rounded-full overflow-hidden">
+          <View className="relative h-2 bg-surface-raised rounded-full">
             <View className="h-full bg-claw-orange rounded-full" style={{ width: "75%" }} />
+            <View
+              className="absolute w-4 h-4 rounded-full bg-slate-300 border-2 border-surface-base"
+              style={{ top: -3, left: "73%", boxShadow: isWeb ? "0 0 6px rgba(0,0,0,0.3)" : undefined } as any}
+            />
           </View>
         </View>
         <View>
-          <View className="flex-row justify-between mb-2">
+          <View className="flex-row justify-between mb-3">
             <Text className="text-sm font-bold text-text-primary">Autonomy Threshold</Text>
             <Text className="text-claw-orange font-mono text-sm">92%</Text>
           </View>
-          <View className="h-2 bg-surface-raised rounded-full overflow-hidden">
+          <View className="relative h-2 bg-surface-raised rounded-full">
             <View className="h-full bg-claw-orange rounded-full" style={{ width: "92%" }} />
+            <View
+              className="absolute w-4 h-4 rounded-full bg-slate-300 border-2 border-surface-base"
+              style={{ top: -3, left: "90%", boxShadow: isWeb ? "0 0 6px rgba(0,0,0,0.3)" : undefined } as any}
+            />
           </View>
         </View>
       </View>
@@ -399,14 +415,22 @@ export default function CreateAgentScreen() {
               {/* Step 3: Model Selection + Execution Params */}
               {step === 3 && (
                 <View>
-                  <View className="flex-row items-center gap-2 mb-2">
-                    <MaterialIcons name="psychology" size={20} color="#ff5e00" />
-                    <Text className="text-xl font-bold text-text-primary">
-                      Neural Configuration
-                    </Text>
+                  <View className="flex-row items-center justify-between mb-6">
+                    <View className="flex-row items-center gap-2">
+                      <MaterialIcons name="psychology" size={20} color="#ff5e00" />
+                      <Text className="text-xl font-black text-text-primary uppercase">
+                        Neural Configuration
+                      </Text>
+                    </View>
+                    {isWeb && (
+                      <View className="flex-row items-center gap-1.5 px-3 py-1 rounded-full border border-status-running/30 bg-status-running/10">
+                        <View className="w-2 h-2 rounded-full bg-status-running" />
+                        <Text className="text-[10px] font-mono font-bold text-status-running uppercase tracking-wider">Substrate Ready</Text>
+                      </View>
+                    )}
                   </View>
-                  <Text className="text-sm text-text-secondary mb-6">
-                    Select the core inference model for your agent.
+                  <Text className="font-mono text-xs text-text-tertiary uppercase tracking-wider mb-6">
+                    Select Core Logic Model
                   </Text>
                   <ModelSelector selected={model} onSelect={setModel} />
                   <ExecutionParams />
@@ -493,7 +517,7 @@ export default function CreateAgentScreen() {
                       canProceed() ? "text-white" : "text-text-tertiary",
                     ].join(" ")}
                   >
-                    Next
+                    {step === 3 ? "Review & Deploy" : "Next"}
                   </Text>
                   <MaterialIcons
                     name="arrow-forward"

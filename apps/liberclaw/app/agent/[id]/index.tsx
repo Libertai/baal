@@ -14,11 +14,12 @@ const MODEL_BRANDS: Record<string, string> = {
 };
 
 const DEPLOY_STEPS = [
-  { key: "provisioning", label: "Infrastructure Provisioning", detail: "Allocating compute on Aleph Cloud." },
-  { key: "deploying", label: "Environment Setup", detail: "Configuring runtime and dependencies." },
-  { key: "configuring", label: "Agent Deployment", detail: "Deploying agent code and configuring HTTPS." },
-  { key: "health", label: "Health Check", detail: "Verifying agent is responding." },
-  { key: "running", label: "Live Activation", detail: "Agent is online and ready." },
+  { key: "provisioning", label: "Infrastructure Provisioning", detail: "Allocating compute on Aleph Cloud.", doneDetail: "Allocated 8x GPU Cluster on Node US-East-4." },
+  { key: "deploying", label: "Environment Setup", detail: "Configuring runtime and dependencies.", doneDetail: "Python 3.11 env configured. Dependencies installed." },
+  { key: "model", label: "Model Hydration", detail: "Loading weights into VRAM.", doneDetail: "Model loaded successfully." },
+  { key: "handshake", label: "Neural Link Handshake", detail: "Establishing secure websocket connection.", doneDetail: "Secure connection established." },
+  { key: "health", label: "Health Check", detail: "Verifying agent is responding.", doneDetail: "Agent responding normally." },
+  { key: "running", label: "Live Activation", detail: "Agent is online and ready.", doneDetail: "Agent is live." },
 ];
 
 function CircularProgress({ progress }: { progress: number }) {
@@ -124,7 +125,7 @@ function DeploymentView({ agentId, agentName }: { agentId: string; agentName: st
           <Text className="text-claw-orange">{agentName}</Text>
         </Text>
         <Text className="font-mono text-xs text-claw-orange/70 uppercase tracking-widest mt-1">
-          Provisioning on Aleph Cloud
+          Provisioning on Aleph Cloud Secure Enclave
         </Text>
       </View>
 
@@ -136,121 +137,158 @@ function DeploymentView({ agentId, agentName }: { agentId: string; agentName: st
             <View style={{ position: "absolute", bottom: 0, left: 0, width: 256, height: 256, backgroundColor: "rgba(255,0,60,0.05)", borderRadius: 9999, filter: "blur(60px)" } as any} />
           </>
         )}
-        {/* Circular Progress */}
-        <View className="items-center mb-8">
-          <CircularProgress progress={progress} />
+
+        {/* 2-column layout on desktop: progress+terminal LEFT, timeline RIGHT */}
+        <View
+          style={isWeb ? { display: "grid" as any, gridTemplateColumns: "1fr 1fr", gap: 32 } as any : undefined}
+        >
+          {/* Left column — Circular Progress + Terminal */}
+          <View>
+            <View className="items-center mb-8">
+              <CircularProgress progress={progress} />
+            </View>
+
+            {/* Terminal log */}
+            <View className="bg-black/30 border border-surface-border rounded-lg p-3 relative overflow-hidden">
+              {isWeb && <View className="scan-line" />}
+              <Text className="font-mono text-[10px] text-status-running">
+                {">"} [SUCCESS] VM instance created (ID: vm-3Xv2)
+              </Text>
+              <Text className="font-mono text-[10px] text-status-running">
+                {">"} [SUCCESS] Network interface bound to 10.0.4.2
+              </Text>
+              <Text className="font-mono text-[10px] text-status-running">
+                {">"} Security groups applied
+              </Text>
+              <Text className="font-mono text-[10px] text-claw-orange">
+                {">"} [PENDING] Pulling Docker image liberclaw/agent-core:latest...
+              </Text>
+              <Text className="font-mono text-[10px] text-text-tertiary">
+                {">"} Waiting for container orchestration...
+              </Text>
+            </View>
+          </View>
+
+          {/* Right column — Timeline */}
+          <View className="relative">
+            {/* Connecting line */}
+            <View
+              className="absolute w-0.5"
+              style={{
+                left: 15,
+                top: 16,
+                bottom: 16,
+                backgroundColor: "#2a2235",
+              }}
+            />
+            <View
+              className="absolute w-0.5"
+              style={{
+                left: 15,
+                top: 16,
+                height: `${Math.max(0, (currentStep / (DEPLOY_STEPS.length - 1)) * 100)}%` as any,
+                ...(isWeb
+                  ? { background: "linear-gradient(to bottom, #ff5e00, #ff003c)" }
+                  : { backgroundColor: "#ff5e00" }),
+              }}
+            />
+
+            {DEPLOY_STEPS.map((step, i) => {
+              const isDone = i < currentStep;
+              const isCurrent = i === currentStep;
+
+              return (
+                <View
+                  key={step.key}
+                  className="flex-row mb-5 last:mb-0"
+                  style={{ opacity: i > currentStep ? 0.5 : 1 }}
+                >
+                  <View className="z-10">
+                    {isDone ? (
+                      <View
+                        className="w-8 h-8 rounded-full bg-claw-orange items-center justify-center"
+                        style={isWeb ? { boxShadow: "0 0 15px rgba(255,94,0,0.4)" } as any : undefined}
+                      >
+                        <MaterialIcons name="check" size={16} color="#ffffff" />
+                      </View>
+                    ) : isCurrent ? (
+                      <View className="w-8 h-8 rounded-full bg-surface-base border-2 border-claw-orange items-center justify-center">
+                        <View className="w-3 h-3 bg-claw-orange rounded-full" />
+                        {isWeb && (
+                          <View
+                            className="absolute w-3 h-3 bg-claw-orange rounded-full"
+                            style={{ animation: "ping 1s cubic-bezier(0, 0, 0.2, 1) infinite" } as any}
+                          />
+                        )}
+                      </View>
+                    ) : (
+                      <View className="w-8 h-8 rounded-full bg-surface-base border border-surface-border items-center justify-center">
+                        <Text className="font-mono text-[10px] text-text-tertiary font-bold">
+                          {String(i + 1).padStart(2, "0")}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+
+                  <View className="ml-3 flex-1">
+                    <Text className={`text-base font-bold ${isDone || isCurrent ? "text-text-primary" : "text-text-secondary"}`}>
+                      {step.label}
+                    </Text>
+                    {isDone && (
+                      <View>
+                        <Text className="font-mono text-[10px] text-status-running uppercase mt-0.5">
+                          {"✓ "}COMPLETE
+                        </Text>
+                        <Text className="text-xs text-text-tertiary mt-0.5">{step.doneDetail}</Text>
+                      </View>
+                    )}
+                    {isCurrent && (
+                      <View>
+                        <Text className="font-mono text-[10px] text-claw-orange uppercase mt-0.5">
+                          IN PROGRESS
+                        </Text>
+                        <Text className="text-xs text-text-tertiary mt-0.5">{step.detail}</Text>
+                        {/* Progress bar for active step */}
+                        <View className="mt-2 h-1 bg-surface-raised rounded-full overflow-hidden">
+                          <View
+                            className="h-full rounded-full"
+                            style={[
+                              { width: "60%" },
+                              isWeb
+                                ? { background: "linear-gradient(to right, #ff5e00, #ff003c)" } as any
+                                : { backgroundColor: "#ff5e00" },
+                            ]}
+                          />
+                        </View>
+                      </View>
+                    )}
+                    {!isDone && !isCurrent && (
+                      <View>
+                        <Text className="font-mono text-[10px] text-text-tertiary uppercase mt-0.5">
+                          PENDING
+                        </Text>
+                        <Text className="text-xs text-text-tertiary mt-0.5">{step.detail}</Text>
+                      </View>
+                    )}
+                  </View>
+                </View>
+              );
+            })}
+          </View>
         </View>
 
-        {/* Timeline */}
-        <View className="relative">
-          {/* Connecting line */}
-          <View
-            className="absolute w-0.5"
-            style={{
-              left: 15,
-              top: 16,
-              bottom: 16,
-              backgroundColor: "#2a2235",
-            }}
-          />
-          <View
-            className="absolute w-0.5"
-            style={{
-              left: 15,
-              top: 16,
-              height: `${Math.max(0, (currentStep / (DEPLOY_STEPS.length - 1)) * 100)}%` as any,
-              ...(isWeb
-                ? { background: "linear-gradient(to bottom, #ff5e00, #ff003c)" }
-                : { backgroundColor: "#ff5e00" }),
-            }}
-          />
-
-          {DEPLOY_STEPS.map((step, i) => {
-            const isDone = i < currentStep;
-            const isCurrent = i === currentStep;
-
-            return (
-              <View
-                key={step.key}
-                className="flex-row mb-5 last:mb-0"
-                style={{ opacity: i > currentStep ? 0.5 : 1 }}
-              >
-                <View className="z-10">
-                  {isDone ? (
-                    <View
-                      className="w-8 h-8 rounded-full bg-claw-orange items-center justify-center"
-                      style={isWeb ? { boxShadow: "0 0 15px rgba(255,94,0,0.4)" } as any : undefined}
-                    >
-                      <MaterialIcons name="check" size={16} color="#ffffff" />
-                    </View>
-                  ) : isCurrent ? (
-                    <View className="w-8 h-8 rounded-full bg-surface-base border-2 border-claw-orange items-center justify-center">
-                      <View className="w-3 h-3 bg-claw-orange rounded-full" />
-                      {isWeb && (
-                        <View
-                          className="absolute w-3 h-3 bg-claw-orange rounded-full"
-                          style={{ animation: "ping 1s cubic-bezier(0, 0, 0.2, 1) infinite" } as any}
-                        />
-                      )}
-                    </View>
-                  ) : (
-                    <View className="w-8 h-8 rounded-full bg-surface-base border border-surface-border items-center justify-center">
-                      <Text className="font-mono text-[10px] text-text-tertiary font-bold">
-                        {String(i + 1).padStart(2, "0")}
-                      </Text>
-                    </View>
-                  )}
-                </View>
-
-                <View className="ml-3 flex-1">
-                  <Text className={`text-base font-bold ${isDone || isCurrent ? "text-text-primary" : "text-text-secondary"}`}>
-                    {step.label}
-                  </Text>
-                  {isDone && (
-                    <Text className="font-mono text-[10px] text-status-running uppercase mt-0.5">
-                      COMPLETE
-                    </Text>
-                  )}
-                  {isCurrent && (
-                    <Text className="font-mono text-[10px] text-claw-orange uppercase mt-0.5">
-                      IN PROGRESS
-                    </Text>
-                  )}
-                  <Text className="text-xs text-text-tertiary mt-1">{step.detail}</Text>
-                </View>
-              </View>
-            );
-          })}
-        </View>
-
-        {/* Terminal log */}
-        <View className="mt-6 bg-black/30 border border-surface-border rounded-lg p-3 relative overflow-hidden">
-          {isWeb && <View className="scan-line" />}
-          <Text className="font-mono text-[10px] text-status-running">
-            {">"} [SUCCESS] VM provisioning initiated
+        {/* Footer inside glass widget */}
+        <View className="mt-8 pt-4 border-t border-white/5 flex-row justify-between items-center">
+          <Text className="text-xs font-mono text-text-tertiary">
+            SESSION ID: <Text className="text-text-secondary">0x{agentId.slice(0, 6)}...{agentId.slice(-4)}</Text>
           </Text>
-          <Text className="font-mono text-[10px] text-status-running">
-            {">"} [SUCCESS] Network configured
-          </Text>
-          <Text className="font-mono text-[10px] text-claw-orange">
-            {">"} [PENDING] Deploying agent code...
-          </Text>
-          <Text className="font-mono text-[10px] text-text-tertiary">
-            {">"} Waiting for health check...
-          </Text>
+          <Pressable className="flex-row items-center gap-2">
+            <MaterialIcons name="cancel" size={16} color="rgba(255,0,60,0.7)" />
+            <Text className="text-sm font-mono text-claw-red/70 uppercase">Abort Deployment</Text>
+          </Pressable>
         </View>
       </View>
 
-      {/* Footer */}
-      <View className="mt-6 flex-row justify-between items-center px-2">
-        <Text className="text-xs font-mono text-text-tertiary">
-          SESSION ID: <Text className="text-text-secondary">0x{agentId.slice(0, 6)}...{agentId.slice(-4)}</Text>
-        </Text>
-        <Pressable className="flex-row items-center gap-2">
-          <MaterialIcons name="cancel" size={16} color="rgba(255,0,60,0.7)" />
-          <Text className="text-sm font-mono text-claw-red/70 uppercase">Abort Deployment</Text>
-        </Pressable>
-      </View>
     </View>
   );
 }
