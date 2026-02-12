@@ -5,8 +5,9 @@ import Svg, { Circle } from "react-native-svg";
 import { useState, useRef, useEffect } from "react";
 import { useAgent, useDeleteAgent } from "@/lib/hooks/useAgents";
 import { useDeploymentStatus } from "@/lib/hooks/useDeployment";
-import { repairAgent } from "@/lib/api/agents";
+import { repairAgent, getAgentHealth } from "@/lib/api/agents";
 import AgentStatusBadge from "@/components/agent/AgentStatusBadge";
+import { useQuery } from "@tanstack/react-query";
 import type { DeploymentStep, DeploymentLogEntry } from "@/lib/api/types";
 
 const isWeb = Platform.OS === "web";
@@ -375,13 +376,42 @@ function DeploymentView({ agentId, agentName, onAbort, onRepair }: { agentId: st
 export default function AgentDetailScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
+  const isDeployingRef = useRef(false);
   const { data: agent, isLoading, refetch } = useAgent(id!);
   const deleteAgent = useDeleteAgent();
   const [aborting, setAborting] = useState(false);
+  const [repairing, setRepairing] = useState(false);
 
   const isDeploying =
     agent?.deployment_status === "pending" ||
     agent?.deployment_status === "deploying";
+
+  // Refetch agent data periodically while deploying so the page
+  // transitions to the result view when deployment finishes
+  useEffect(() => {
+    if (!isDeploying) {
+      // If we were deploying and now we're not, do one final refetch
+      if (isDeployingRef.current) {
+        isDeployingRef.current = false;
+        refetch();
+      }
+      return;
+    }
+    isDeployingRef.current = true;
+    const interval = setInterval(() => refetch(), 5_000);
+    return () => clearInterval(interval);
+  }, [isDeploying, refetch]);
+
+  // Poll health for "running" agents
+  const { data: health } = useQuery({
+    queryKey: ["agent-health", id],
+    queryFn: () => getAgentHealth(id!),
+    enabled: !!id && agent?.deployment_status === "running",
+    refetchInterval: 15_000,
+  });
+
+  const isUnhealthy = agent?.deployment_status === "running" && health && !health.healthy;
+  const isFailed = agent?.deployment_status === "failed";
 
   const handleAbort = async () => {
     setAborting(true);
@@ -394,11 +424,14 @@ export default function AgentDetailScreen() {
   };
 
   const handleRepair = async () => {
+    setRepairing(true);
     try {
       await repairAgent(id!);
       await refetch();
     } catch {
       await refetch();
+    } finally {
+      setRepairing(false);
     }
   };
 
@@ -513,8 +546,64 @@ export default function AgentDetailScreen() {
               </View>
             </View>
 
-            {/* Health indicator */}
-            {agent.deployment_status === "running" && (
+            {/* Health / failure indicator */}
+            {isFailed && (
+              <View className={`${cardClass} p-4 mb-4`}>
+                <View className="flex-row items-center mb-3">
+                  <MaterialIcons name="error-outline" size={20} color="#ff003c" />
+                  <Text className="text-sm text-claw-red font-semibold ml-2 flex-1">
+                    Deployment failed
+                  </Text>
+                </View>
+                <Text className="text-xs text-text-tertiary mb-3">
+                  The agent could not start. Try repairing to redeploy.
+                </Text>
+                <TouchableOpacity
+                  className="bg-claw-orange active:bg-claw-orange-dark rounded-lg py-3 flex-row items-center justify-center gap-2"
+                  onPress={handleRepair}
+                  disabled={repairing}
+                >
+                  {repairing ? (
+                    <ActivityIndicator color="#ffffff" />
+                  ) : (
+                    <>
+                      <MaterialIcons name="refresh" size={18} color="#ffffff" />
+                      <Text className="text-white font-bold">Repair</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {agent.deployment_status === "running" && isUnhealthy && (
+              <View className={`${cardClass} p-4 mb-4`}>
+                <View className="flex-row items-center mb-3">
+                  <MaterialIcons name="warning" size={20} color="#ff5e00" />
+                  <Text className="text-sm text-claw-orange font-semibold ml-2 flex-1">
+                    Agent is not responding
+                  </Text>
+                </View>
+                <Text className="text-xs text-text-tertiary mb-3">
+                  The VM is deployed but the agent service is down. Try repairing.
+                </Text>
+                <TouchableOpacity
+                  className="bg-claw-orange active:bg-claw-orange-dark rounded-lg py-3 flex-row items-center justify-center gap-2"
+                  onPress={handleRepair}
+                  disabled={repairing}
+                >
+                  {repairing ? (
+                    <ActivityIndicator color="#ffffff" />
+                  ) : (
+                    <>
+                      <MaterialIcons name="refresh" size={18} color="#ffffff" />
+                      <Text className="text-white font-bold">Repair</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {agent.deployment_status === "running" && health?.healthy && (
               <View className={`${cardClass} p-4 mb-4 flex-row items-center`}>
                 <View className="w-2.5 h-2.5 rounded-full bg-status-running mr-3" />
                 <Text className="text-sm text-text-primary font-medium flex-1">
@@ -528,7 +617,7 @@ export default function AgentDetailScreen() {
 
             {/* Action buttons */}
             <View className="flex-row gap-3 mb-4">
-              {agent.deployment_status === "running" && (
+              {agent.deployment_status === "running" && health?.healthy && (
                 <TouchableOpacity
                   className="flex-1 bg-claw-orange active:bg-claw-orange-dark rounded-lg py-3.5 flex-row items-center justify-center gap-2"
                   style={isWeb ? { boxShadow: "0 0 20px rgba(255,94,0,0.4)" } as any : undefined}

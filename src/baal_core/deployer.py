@@ -829,8 +829,14 @@ class AlephDeployer:
         return {"status": "success", "vm_url": vm_url, "steps": steps}
 
     def _get_agent_source_dir(self) -> Path:
-        """Get path to the baal_agent source package."""
-        return Path(__file__).resolve().parent.parent.parent / "baal_agent"
+        """Get path to the baal_agent source package.
+
+        __file__ = src/baal_core/deployer.py
+        .parent = src/baal_core/
+        .parent.parent = src/
+        → src/baal_agent/
+        """
+        return Path(__file__).resolve().parent.parent / "baal_agent"
 
     async def _ssh_pipe_tar(
         self,
@@ -901,6 +907,15 @@ class AlephDeployer:
             # Get output
             ssh_stdout = await ssh_proc.stdout.read() if ssh_proc.stdout else b""
             ssh_stderr = await ssh_proc.stderr.read() if ssh_proc.stderr else b""
+            tar_stderr = await tar_proc.stderr.read() if tar_proc.stderr else b""
+
+            # Check BOTH local tar and remote SSH/tar exit codes
+            if tar_proc.returncode and tar_proc.returncode != 0:
+                return (
+                    tar_proc.returncode,
+                    "",
+                    tar_stderr.decode("utf-8", errors="replace"),
+                )
 
             return (
                 ssh_proc.returncode or 0,

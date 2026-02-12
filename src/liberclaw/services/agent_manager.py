@@ -264,17 +264,17 @@ async def deploy_agent_background(
                     step="complete", duration_seconds=duration,
                 ))
             else:
-                # Agent deployed but not responding — still mark as running
-                # since it may just need more time to start
-                set_step(agent_id, "health", "done",
-                         f"Agent deployed at {vm_url} (startup may take a moment)")
-                add_log(agent_id, "warning",
-                        "Health check timed out, but agent is deployed. It may need more time to start.")
+                set_step(agent_id, "health", "failed",
+                         "Agent is not responding after deployment")
+                add_log(agent_id, "error",
+                        "Health check failed — agent deployed but not responding. Use Repair to retry.")
                 agent.vm_url = vm_url
-                agent.deployment_status = "running"
+                agent.deployment_status = "failed"
                 db.add(DeploymentHistory(
-                    agent_id=agent_id, status="success",
-                    step="complete", duration_seconds=duration,
+                    agent_id=agent_id, status="failed",
+                    step="health_check",
+                    error_message="Agent not responding after 30s",
+                    duration_seconds=duration,
                 ))
 
             await db.commit()
