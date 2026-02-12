@@ -155,12 +155,21 @@ async def request_magic_link(
 ):
     """Request a magic link email."""
     settings = get_settings()
-    if not settings.magic_link_secret or not settings.resend_api_key:
-        raise HTTPException(status_code=501, detail="Magic link auth not configured")
+    if not settings.magic_link_secret:
+        raise HTTPException(status_code=501, detail="Magic link auth not configured (set LIBERCLAW_MAGIC_LINK_SECRET)")
 
     token = await create_magic_link(db, body.email, settings.magic_link_secret)
     await send_magic_link_email(
-        body.email, token, settings.frontend_url, settings.resend_api_key
+        body.email,
+        token,
+        settings.frontend_url,
+        settings.resend_api_key,
+        smtp_host=settings.smtp_host,
+        smtp_port=settings.smtp_port,
+        smtp_user=settings.smtp_user,
+        smtp_password=settings.smtp_password,
+        smtp_from=settings.smtp_from,
+        smtp_use_tls=settings.smtp_use_tls,
     )
     return MagicLinkResponse()
 

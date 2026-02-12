@@ -34,6 +34,14 @@ class LiberClawSettings(BaseSettings):
     magic_link_secret: str = ""
     resend_api_key: str = ""
 
+    # SMTP (used instead of Resend when configured)
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from: str = "LiberClaw <noreply@libertai.io>"
+    smtp_use_tls: bool = True
+
     # Aleph Cloud deployment
     aleph_private_key: str = ""
     aleph_ssh_pubkey: str = ""
