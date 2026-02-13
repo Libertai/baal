@@ -1,0 +1,259 @@
+---
+import Base from "../layouts/Base.astro";
+import ClawLogo from "../components/ClawLogo.astro";
+import NetworkMap from "../components/NetworkMap.astro";
+
+const APP_URL = "https://app.liberclaw.io";
+---
+
+<Base title="LiberClaw - Autonomous AI Agents on Decentralized Infrastructure">
+  <!-- Hero -->
+  <div class="relative pt-32 pb-16 overflow-hidden">
+    <div class="hero-glow absolute inset-0 z-0"></div>
+    <section class="relative z-10 px-4 mb-20">
+      <div class="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
+        <div class="lg:col-span-7 text-left">
+          <div class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-claw-orange/10 border border-claw-orange/30 mb-8 backdrop-blur-sm">
+            <span class="material-icons-round text-claw-orange text-sm">bolt</span>
+            <span class="text-xs font-bold text-claw-orange tracking-widest uppercase">Powered by Aleph Cloud + LibertAI</span>
+          </div>
+          <h1 class="text-6xl sm:text-7xl lg:text-8xl font-black tracking-tighter mb-8 leading-[0.9] text-white uppercase">
+            Unstoppable <br />
+            <span class="text-transparent bg-clip-text bg-gradient-to-r from-claw-orange to-red-600 glow-text-orange">Autonomy.</span>
+          </h1>
+          <p class="mt-6 max-w-2xl text-xl text-slate-400 font-mono leading-relaxed border-l-2 border-claw-orange/50 pl-6">
+            Deploy sovereign AI agents on decentralized infrastructure. Private execution. Uncensored inference. Total ownership.
+          </p>
+          <div class="mt-12 flex flex-col sm:flex-row items-start gap-6">
+            <a href={APP_URL} class="claw-btn px-8 py-4 rounded-xl text-lg flex items-center gap-3 group">
+              <span>Deploy Agent</span>
+              <ClawLogo size={24} class="group-hover:rotate-45 transition-transform" />
+            </a>
+            <a href="https://docs.libertai.io" target="_blank" rel="noopener" class="px-8 py-4 rounded-xl text-lg font-mono text-white border border-white/20 hover:bg-white/5 transition-all uppercase tracking-wide flex items-center gap-3">
+              <span class="material-icons-round text-claw-orange">terminal</span>
+              Read Docs
+            </a>
+          </div>
+        </div>
+        <div class="lg:col-span-5">
+          <div class="glass-widget p-1 relative overflow-hidden claw-clip">
+            <div class="bg-black/40 p-8">
+              <div class="flex justify-between items-center mb-6 border-b border-white/10 pb-4">
+                <span class="text-sm font-mono text-claw-orange uppercase">System Status</span>
+                <span class="flex items-center gap-2 text-xs font-bold text-green-400 uppercase">
+                  <span class="w-2 h-2 bg-green-400 rounded-full animate-ping"></span>
+                  Online
+                </span>
+              </div>
+              <div class="space-y-6">
+                <div>
+                  <div class="flex justify-between text-xs uppercase text-slate-500 mb-1">Agents Deployed</div>
+                  <div class="text-3xl font-mono text-white">847 <span class="text-sm text-slate-500">active</span></div>
+                  <div class="w-full bg-white/5 h-1 mt-2">
+                    <div class="bg-claw-orange h-1 w-[42%]"></div>
+                  </div>
+                </div>
+                <div>
+                  <div class="flex justify-between text-xs uppercase text-slate-500 mb-1">Inference Calls</div>
+                  <div class="text-3xl font-mono text-white">2.4M <span class="text-sm text-slate-500">/ day</span></div>
+                  <div class="w-full bg-white/5 h-1 mt-2">
+                    <div class="bg-claw-red h-1 w-[72%]"></div>
+                  </div>
+                </div>
+              </div>
+              <div class="mt-6 grid grid-cols-2 gap-4 pt-4 border-t border-white/10">
+                <div>
+                  <div class="text-xs uppercase text-slate-500 mb-1">Uptime</div>
+                  <div class="text-lg font-mono text-green-400">99.7%</div>
+                </div>
+                <div>
+                  <div class="text-xs uppercase text-slate-500 mb-1">Aleph CRNs</div>
+                  <div class="text-lg font-mono text-white">312 <span class="text-xs text-slate-500">nodes</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- Live Network Map -->
+  <main class="relative z-20 pb-20">
+    <section class="max-w-7xl mx-auto px-4 mb-24">
+      <NetworkMap />
+    </section>
+
+    <!-- Feature Cards -->
+    <div id="features" class="max-w-7xl mx-auto px-4 grid grid-cols-1 lg:grid-cols-2 gap-8">
+      <!-- Decentralized Infrastructure -->
+      <section class="glass-widget p-8 lg:p-10 flex flex-col justify-between group">
+        <div>
+          <div class="w-14 h-14 rounded-2xl bg-claw-orange/10 border border-claw-orange/20 flex items-center justify-center mb-8 group-hover:scale-110 transition-transform duration-500">
+            <span class="material-icons-round text-claw-orange text-3xl">hub</span>
+          </div>
+          <h2 class="text-3xl font-bold text-white mb-4 uppercase tracking-tight">Decentralized<br />Infrastructure</h2>
+          <p class="text-slate-400 leading-relaxed mb-8">
+            Your agents run on Aleph Cloud's distributed compute network. No single point of failure. No corporate kill switch. Encrypted, resilient, and always available.
+          </p>
+          <div class="space-y-4">
+            <div class="flex items-center gap-4 p-4 rounded-xl bg-white/5 border border-white/5 hover:border-claw-orange/30 transition-colors">
+              <span class="material-icons-round text-slate-500">lock</span>
+              <div>
+                <h4 class="text-white font-bold text-sm">End-to-End Encrypted</h4>
+                <p class="text-xs text-slate-500">Fernet encryption for all agent communications</p>
+              </div>
+            </div>
+            <div class="flex items-center gap-4 p-4 rounded-xl bg-white/5 border border-white/5 hover:border-claw-orange/30 transition-colors">
+              <span class="material-icons-round text-slate-500">psychology</span>
+              <div>
+                <h4 class="text-white font-bold text-sm">Persistent Memory</h4>
+                <p class="text-xs text-slate-500">Long-term memory with context compaction</p>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="mt-8 pt-6 border-t border-white/5">
+          <a class="text-claw-orange font-mono text-sm uppercase flex items-center gap-2 hover:gap-4 transition-all" href="https://aleph.cloud" target="_blank" rel="noopener">
+            Explore Aleph Cloud <span class="material-icons-round text-base">arrow_right_alt</span>
+          </a>
+        </div>
+      </section>
+
+      <!-- Rapid Deployment -->
+      <section class="glass-widget p-8 lg:p-10 flex flex-col justify-between group">
+        <div>
+          <div class="w-14 h-14 rounded-2xl bg-claw-red/10 border border-claw-red/20 flex items-center justify-center mb-8 group-hover:scale-110 transition-transform duration-500">
+            <span class="material-icons-round text-claw-red text-3xl">rocket_launch</span>
+          </div>
+          <h2 class="text-3xl font-bold text-white mb-4 uppercase tracking-tight">Rapid<br />Deployment</h2>
+          <p class="text-slate-400 leading-relaxed mb-8">
+            From idea to autonomous agent in three steps. No DevOps, no server configuration, no cloud console gymnastics.
+          </p>
+          <div class="space-y-6 relative">
+            <div class="absolute left-[19px] top-4 bottom-4 w-0.5 bg-white/10"></div>
+            <div class="relative pl-12">
+              <div class="absolute left-0 top-0 w-10 h-10 rounded-full bg-background-card border border-white/20 flex items-center justify-center text-sm font-mono font-bold text-white z-10">01</div>
+              <h4 class="text-white font-bold">Sign Up</h4>
+              <p class="text-sm text-slate-500 mt-1">Email, Google, or start as guest.</p>
+            </div>
+            <div class="relative pl-12">
+              <div class="absolute left-0 top-0 w-10 h-10 rounded-full bg-background-card border border-white/20 flex items-center justify-center text-sm font-mono font-bold text-white z-10">02</div>
+              <h4 class="text-white font-bold">Configure Agent</h4>
+              <p class="text-sm text-slate-500 mt-1">Name, system prompt, and model selection.</p>
+            </div>
+            <div class="relative pl-12">
+              <div class="absolute left-0 top-0 w-10 h-10 rounded-full bg-claw-orange text-white shadow-[0_0_10px_#ff5e00] flex items-center justify-center text-sm font-mono font-bold z-10">03</div>
+              <h4 class="text-white font-bold">Deploy</h4>
+              <p class="text-sm text-slate-500 mt-1">Live on Aleph Cloud in under 5 minutes.</p>
+            </div>
+          </div>
+        </div>
+        <div class="mt-8 pt-6 border-t border-white/5">
+          <a class="text-claw-red font-mono text-sm uppercase flex items-center gap-2 hover:gap-4 transition-all" href={APP_URL}>
+            Start Building <span class="material-icons-round text-base">arrow_right_alt</span>
+          </a>
+        </div>
+      </section>
+    </div>
+
+    <!-- Featured Agents -->
+    <section id="agents" class="max-w-7xl mx-auto px-4 mt-8">
+      <div class="glass-widget p-8 lg:p-10">
+        <div class="flex justify-between items-end mb-10">
+          <div>
+            <h2 class="text-2xl font-bold text-white uppercase tracking-wide mb-2">Featured Agents</h2>
+            <p class="text-slate-400">See what people are building on LiberClaw.</p>
+          </div>
+          <a href={APP_URL} class="text-sm font-mono text-claw-orange uppercase border border-claw-orange/30 px-4 py-2 rounded hover:bg-claw-orange/10 transition-colors">
+            Browse All
+          </a>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <!-- CodeBuddy -->
+          <div class="bg-background-card border border-white/10 rounded-xl p-6 hover:border-claw-orange/50 transition-all duration-300 group relative overflow-hidden">
+            <div class="absolute top-0 right-0 p-2 opacity-10 group-hover:opacity-100 transition-opacity">
+              <span class="material-icons-round text-claw-orange">star</span>
+            </div>
+            <div class="flex items-center gap-4 mb-4">
+              <div class="w-10 h-10 bg-gradient-to-br from-blue-600 to-cyan-500 rounded-lg flex items-center justify-center text-white font-bold">C</div>
+              <div>
+                <h4 class="text-white font-bold">CodeBuddy</h4>
+                <div class="text-[10px] text-green-400 font-mono flex items-center gap-1">
+                  <span class="w-1.5 h-1.5 bg-green-400 rounded-full"></span> ACTIVE
+                </div>
+              </div>
+            </div>
+            <div class="h-20 bg-black/50 rounded-lg p-3 font-mono text-[10px] text-slate-400 mb-4 overflow-hidden">
+              &gt; refactoring auth middleware<br />
+              &gt; test coverage: 94%<br />
+              <span class="text-green-400">&gt; all tests passing</span>
+            </div>
+            <div class="flex justify-between items-center border-t border-white/5 pt-4">
+              <span class="text-xs text-slate-500">Dev Tools</span>
+              <span class="text-xs text-claw-orange font-bold font-mono">Claw-Core</span>
+            </div>
+          </div>
+          <!-- Researcher -->
+          <div class="bg-background-card border border-white/10 rounded-xl p-6 hover:border-claw-orange/50 transition-all duration-300 group relative overflow-hidden">
+            <div class="flex items-center gap-4 mb-4">
+              <div class="w-10 h-10 bg-gradient-to-br from-purple-600 to-pink-500 rounded-lg flex items-center justify-center text-white font-bold">R</div>
+              <div>
+                <h4 class="text-white font-bold">Researcher</h4>
+                <div class="text-[10px] text-green-400 font-mono flex items-center gap-1">
+                  <span class="w-1.5 h-1.5 bg-green-400 rounded-full"></span> ACTIVE
+                </div>
+              </div>
+            </div>
+            <div class="h-20 bg-black/50 rounded-lg p-3 font-mono text-[10px] text-slate-400 mb-4 overflow-hidden">
+              &gt; fetching arxiv.org papers<br />
+              &gt; summarizing 12 results<br />
+              <span class="text-yellow-400">&gt; writing analysis report...</span>
+            </div>
+            <div class="flex justify-between items-center border-t border-white/5 pt-4">
+              <span class="text-xs text-slate-500">Analysis</span>
+              <span class="text-xs text-claw-orange font-bold font-mono">Claw-Core</span>
+            </div>
+          </div>
+          <!-- SysAdmin -->
+          <div class="bg-background-card border border-white/10 rounded-xl p-6 hover:border-claw-orange/50 transition-all duration-300 group relative overflow-hidden">
+            <div class="flex items-center gap-4 mb-4">
+              <div class="w-10 h-10 bg-gradient-to-br from-orange-500 to-yellow-500 rounded-lg flex items-center justify-center text-white font-bold">S</div>
+              <div>
+                <h4 class="text-white font-bold">SysAdmin</h4>
+                <div class="text-[10px] text-claw-orange font-mono flex items-center gap-1">
+                  <span class="w-1.5 h-1.5 bg-claw-orange rounded-full animate-pulse"></span> WORKING
+                </div>
+              </div>
+            </div>
+            <div class="h-20 bg-black/50 rounded-lg p-3 font-mono text-[10px] text-slate-400 mb-4 overflow-hidden">
+              &gt; checking nginx config<br />
+              &gt; disk usage: 42% OK<br />
+              <span class="text-green-400">&gt; backup completed</span>
+            </div>
+            <div class="flex justify-between items-center border-t border-white/5 pt-4">
+              <span class="text-xs text-slate-500">DevOps</span>
+              <span class="text-xs text-claw-orange font-bold font-mono">Deep-Claw</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- CTA -->
+    <section class="max-w-4xl mx-auto px-4 mt-24 text-center">
+      <h2 class="text-4xl md:text-5xl font-black text-white mb-8 uppercase tracking-tight">
+        Deploy Your First <span class="text-claw-orange glow-text-orange">Agent</span>.
+      </h2>
+      <p class="text-xl text-slate-400 mb-12 font-light">
+        Free to start. No credit card. No cloud account. Just pick a model and go.
+      </p>
+      <div class="flex justify-center">
+        <a href={APP_URL} class="claw-btn px-10 py-5 rounded-xl text-xl flex items-center gap-4 group">
+          <ClawLogo size={30} />
+          <span>Get Started</span>
+        </a>
+      </div>
+    </section>
+  </main>
+</Base>

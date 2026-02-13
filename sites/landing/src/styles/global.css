@@ -1,0 +1,84 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer components {
+  .glass-widget {
+    @apply bg-glass-gradient backdrop-blur-xl border border-claw-orange/30 rounded-3xl shadow-[0_0_15px_rgba(255,94,0,0.1)];
+  }
+  .glass-widget:hover {
+    @apply border-claw-orange/60 shadow-[0_0_25px_rgba(255,94,0,0.2)];
+  }
+  .claw-btn {
+    @apply bg-claw-orange text-white font-bold uppercase tracking-wider transition-all duration-300 shadow-[0_0_20px_rgba(255,94,0,0.4)];
+  }
+  .claw-btn:hover {
+    @apply bg-orange-600 shadow-[0_0_40px_rgba(255,94,0,0.6)] scale-[1.02];
+  }
+  .glow-text-orange {
+    text-shadow: 0 0 20px rgba(255, 94, 0, 0.5);
+  }
+  .hero-glow {
+    background: radial-gradient(
+      circle at center,
+      rgba(255, 94, 0, 0.15) 0%,
+      transparent 60%
+    );
+  }
+  .map-grid {
+    background-size: 40px 40px;
+    background-image: linear-gradient(
+        to right,
+        rgba(255, 94, 0, 0.05) 1px,
+        transparent 1px
+      ),
+      linear-gradient(
+        to bottom,
+        rgba(255, 94, 0, 0.05) 1px,
+        transparent 1px
+      );
+  }
+  .agent-popover {
+    @apply absolute bg-background-card/90 backdrop-blur-md border border-claw-orange/50 p-4 rounded-xl shadow-[0_0_30px_rgba(255,94,0,0.15)];
+    transform: translate(-50%, -120%);
+    transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    opacity: 0;
+    pointer-events: none;
+    z-index: 50;
+  }
+  .agent-marker:hover .agent-popover {
+    opacity: 1;
+    transform: translate(-50%, -140%);
+  }
+  .scan-line {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 4px;
+    background: rgba(255, 94, 0, 0.5);
+    box-shadow: 0 0 10px rgba(255, 94, 0, 0.8);
+    animation: scan 3s linear infinite;
+    z-index: 10;
+    opacity: 0.3;
+  }
+  @keyframes scan {
+    0% {
+      top: 0%;
+      opacity: 0;
+    }
+    10% {
+      opacity: 0.5;
+    }
+    90% {
+      opacity: 0.5;
+    }
+    100% {
+      top: 100%;
+      opacity: 0;
+    }
+  }
+  .claw-clip {
+    clip-path: polygon(10% 0, 100% 0, 100% 90%, 90% 100%, 0 100%, 0 10%);
+  }
+}

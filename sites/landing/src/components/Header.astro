@@ -1,0 +1,36 @@
+---
+import ClawLogo from "./ClawLogo.astro";
+
+interface Props {
+  appUrl?: string;
+}
+
+const { appUrl = "https://app.liberclaw.io" } = Astro.props;
+---
+
+<header class="fixed top-0 w-full z-[100] border-b border-white/5 backdrop-blur-md bg-background-dark/80">
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+    <div class="flex items-center justify-between h-20">
+      <a href="/" class="flex-shrink-0 flex items-center gap-2 group">
+        <div class="w-10 h-10 rounded bg-gradient-to-br from-claw-orange to-red-600 flex items-center justify-center group-hover:shadow-[0_0_15px_rgba(255,94,0,0.5)] transition-shadow duration-300">
+          <ClawLogo size={24} />
+        </div>
+        <span class="font-bold text-2xl tracking-tight text-white font-mono uppercase">LiberClaw</span>
+      </a>
+      <div class="hidden md:block">
+        <div class="ml-10 flex items-baseline space-x-8">
+          <a class="text-sm font-mono hover:text-claw-orange transition-colors duration-200 uppercase tracking-widest" href="#features">Features</a>
+          <a class="text-sm font-mono hover:text-claw-orange transition-colors duration-200 uppercase tracking-widest" href="#agents">Agents</a>
+          <a class="text-sm font-mono hover:text-claw-orange transition-colors duration-200 uppercase tracking-widest" href="https://docs.libertai.io" target="_blank" rel="noopener">Docs</a>
+          <a class="text-sm font-mono hover:text-claw-orange transition-colors duration-200 uppercase tracking-widest" href="https://github.com/Libertai/baal" target="_blank" rel="noopener">GitHub</a>
+        </div>
+      </div>
+      <div class="flex items-center gap-4">
+        <a href={appUrl} class="claw-btn px-5 py-2.5 rounded text-sm font-mono uppercase tracking-wide flex items-center gap-2">
+          <span>Launch App</span>
+          <span class="material-icons-round text-base">arrow_forward</span>
+        </a>
+      </div>
+    </div>
+  </div>
+</header>

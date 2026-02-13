@@ -1,0 +1,25 @@
+---
+import ClawLogo from "./ClawLogo.astro";
+---
+
+<footer class="bg-background-dark border-t border-white/5 py-12 relative z-20 mt-12">
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row justify-between items-center gap-8">
+    <div class="flex items-center gap-3">
+      <div class="w-8 h-8 rounded bg-gradient-to-br from-claw-orange to-red-600 flex items-center justify-center">
+        <ClawLogo size={16} />
+      </div>
+      <span class="text-lg font-bold text-white tracking-tight uppercase">LiberClaw</span>
+    </div>
+    <div class="flex gap-8 text-sm text-slate-500 font-mono uppercase">
+      <a class="hover:text-claw-orange transition-colors" href="https://docs.libertai.io" target="_blank" rel="noopener">Docs</a>
+      <a class="hover:text-claw-orange transition-colors" href="https://github.com/Libertai/baal" target="_blank" rel="noopener">GitHub</a>
+      <a class="hover:text-claw-orange transition-colors" href="https://discord.gg/libertai" target="_blank" rel="noopener">Discord</a>
+      <a class="hover:text-claw-orange transition-colors" href="https://libertai.io" target="_blank" rel="noopener">LibertAI</a>
+    </div>
+    <div class="text-xs text-slate-600 font-mono">
+      &copy; {new Date().getFullYear()} LiberClaw. Powered by
+      <a href="https://aleph.cloud" class="hover:text-claw-orange transition-colors" target="_blank" rel="noopener">Aleph Cloud</a> &amp;
+      <a href="https://libertai.io" class="hover:text-claw-orange transition-colors" target="_blank" rel="noopener">LibertAI</a>.
+    </div>
+  </div>
+</footer>
