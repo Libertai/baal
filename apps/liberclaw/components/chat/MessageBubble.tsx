@@ -1,63 +1,145 @@
-import React from 'react';
-import { View, Text } from 'react-native';
-import Markdown from 'react-native-markdown-display';
+/**
+ * Chat message bubble — handles user, agent, tool_use, and error messages.
+ */
 
-export interface Message {
-  role: 'user' | 'assistant';
-  content: string;
-  timestamp?: string;
-}
+import { View, Text, Platform } from "react-native";
+import MaterialIcons from "@expo/vector-icons/MaterialIcons";
+import Markdown from "react-native-markdown-display";
+import type { ChatMessage } from "@/lib/api/types";
+import { markdownStyles, formatTimestamp } from "./utils";
+import ToolCallCard from "./ToolCallCard";
 
 interface MessageBubbleProps {
-  message: Message;
+  message: ChatMessage;
+  showInternals: boolean;
+  agentName?: string;
+  isLastMessage?: boolean;
+  isStreaming?: boolean;
 }
 
-export default function MessageBubble({ message }: MessageBubbleProps) {
-  const isUser = message.role === 'user';
+export default function MessageBubble({
+  message,
+  showInternals,
+  agentName = "LiberClaw Agent",
+  isLastMessage = false,
+  isStreaming = false,
+}: MessageBubbleProps) {
+  // Tool use → delegate to ToolCallCard, indented to align with agent text
+  if (message.type === "tool_use") {
+    if (!showInternals) return null;
+    // Only the very last message during streaming could still be executing
+    const isCompleted = !(isLastMessage && isStreaming);
+    return (
+      <View style={{ marginLeft: 52 }}>
+        <ToolCallCard message={message} isCompleted={isCompleted} />
+      </View>
+    );
+  }
 
-  return (
-    <View
-      className={`mb-2 max-w-[85%] ${isUser ? 'self-end' : 'self-start'}`}
-    >
-      <View
-        className={`rounded-2xl px-4 py-2.5 ${
-          isUser ? 'rounded-br-sm bg-blue-600' : 'rounded-bl-sm bg-gray-200'
-        }`}
-      >
-        {isUser ? (
-          <Text className="text-base text-white">{message.content}</Text>
-        ) : (
-          <Markdown
+  // Error message
+  if (message.type === "error") {
+    return (
+      <View className="mb-8 flex-row items-start">
+        <View
+          className="w-10 h-10 rounded items-center justify-center mr-3"
+          style={{ backgroundColor: "rgba(255, 23, 68, 0.2)" }}
+        >
+          <MaterialIcons name="error-outline" size={20} color="#ff1744" />
+        </View>
+        <View className="flex-1">
+          <View className="flex-row items-center mb-1">
+            <Text className="text-sm font-bold mr-2" style={{ color: "#ff1744" }}>
+              Error
+            </Text>
+            <Text className="font-mono text-xs text-text-secondary">
+              {formatTimestamp()}
+            </Text>
+          </View>
+          <View
+            className="rounded-lg px-4 py-3"
             style={{
-              body: { color: '#111827', fontSize: 16 },
-              code_inline: {
-                backgroundColor: '#e5e7eb',
-                paddingHorizontal: 4,
-                borderRadius: 4,
-                fontSize: 14,
-              },
-              fence: {
-                backgroundColor: '#1f2937',
-                color: '#e5e7eb',
-                padding: 12,
-                borderRadius: 8,
-                fontSize: 13,
-              },
+              backgroundColor: "rgba(255, 23, 68, 0.08)",
+              borderWidth: 1,
+              borderColor: "rgba(255, 23, 68, 0.3)",
             }}
           >
-            {message.content}
-          </Markdown>
-        )}
+            <Text className="text-sm" style={{ color: "#ff8a80" }}>
+              {message.content ?? "An error occurred"}
+            </Text>
+          </View>
+        </View>
       </View>
-      {message.timestamp ? (
-        <Text
-          className={`mt-1 text-xs text-gray-400 ${
-            isUser ? 'text-right' : 'text-left'
-          }`}
-        >
-          {message.timestamp}
-        </Text>
-      ) : null}
+    );
+  }
+
+  // Skip non-displayable types
+  if (message.type !== "text") return null;
+
+  const isUser = message.name === "user";
+
+  // User message
+  if (isUser) {
+    return (
+      <View className="mb-8 flex-row-reverse items-start">
+        <View className="w-10 h-10 rounded bg-slate-700 items-center justify-center ml-3">
+          <MaterialIcons name="person" size={20} color="#8a8494" />
+        </View>
+        <View className="flex-1 items-end">
+          <View className="flex-row items-center mb-1">
+            <Text className="font-mono text-xs text-text-secondary mr-2">
+              {formatTimestamp()}
+            </Text>
+            <Text className="text-sm font-bold text-text-primary">
+              Operator
+            </Text>
+          </View>
+          <View
+            className="rounded-2xl rounded-tr-none px-6 py-3 max-w-[90%]"
+            style={{
+              backgroundColor: "rgba(255, 255, 255, 0.05)",
+              borderWidth: 1,
+              borderColor: "rgba(255, 255, 255, 0.1)",
+            }}
+          >
+            <Text className="text-base text-text-primary">
+              {message.content ?? ""}
+            </Text>
+          </View>
+        </View>
+      </View>
+    );
+  }
+
+  // Agent message
+  return (
+    <View className="mb-8 flex-row items-start">
+      <View
+        className="w-10 h-10 rounded items-center justify-center mr-3"
+        style={[
+          { backgroundColor: "#ff5e00" },
+          Platform.OS === "web" &&
+            ({
+              backgroundImage:
+                "linear-gradient(to bottom right, #ff5e00, #dc2626)",
+              boxShadow: "0 4px 6px rgba(234, 88, 12, 0.2)",
+            } as any),
+        ]}
+      >
+        <MaterialIcons name="smart-toy" size={20} color="#ffffff" />
+      </View>
+      <View className="flex-1">
+        <View className="flex-row items-center mb-1">
+          <Text className="text-sm font-bold text-text-primary mr-2">
+            {agentName}
+          </Text>
+          <Text className="font-mono text-xs text-text-secondary">
+            {formatTimestamp()}
+          </Text>
+        </View>
+        <View className="max-w-[95%]">
+          <Markdown style={markdownStyles}>{message.content ?? ""}</Markdown>
+        </View>
+      </View>
     </View>
   );
 }

@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { View, Text, TouchableOpacity, Switch, ScrollView, Platform } from "react-native";
+import { View, Text, TouchableOpacity, ScrollView, Platform } from "react-native";
+import Toggle from "@/components/ui/Toggle";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 
 import { useAuth } from "@/lib/auth/provider";
@@ -317,11 +318,9 @@ export default function ProfileScreen(): React.ReactElement {
           icon="code"
           label="Show Tool Calls"
           trailing={
-            <Switch
+            <Toggle
               value={showToolCalls}
               onValueChange={setShowToolCalls}
-              trackColor={{ false: "#2a2235", true: "#ff5e00" }}
-              thumbColor="#f0ede8"
             />
           }
         />

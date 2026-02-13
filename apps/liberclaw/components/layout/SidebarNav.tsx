@@ -103,8 +103,7 @@ export default function SidebarNav(): React.JSX.Element {
       <View className="px-2 flex-1">
         {/* Running agents */}
         {runningAgents.map((agent: any) => {
-          const isActive = pathname.includes(`/agent/${agent.id}`) ||
-            (pathname.includes("/chat"));
+          const isActive = pathname.includes(`/agent/${agent.id}`);
 
           if (isActive) {
             return (

@@ -125,6 +125,9 @@ export interface ChatMessage {
   type: ChatMessageType;
   content?: string;
   name?: string;
+  input?: string;    // Tool arguments JSON (present on tool_use events)
+  path?: string;     // File path (present on file events)
+  caption?: string;  // File caption (present on file events)
 }
 
 export interface PendingMessagesResponse {
