@@ -75,3 +75,5 @@ class AgentHealthResponse(BaseModel):
     agent_id: uuid.UUID
     healthy: bool
     vm_url: str | None
+    agent_version: int | None = None
+    current_version: int | None = None

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { View } from "react-native";
 import { useLocalSearchParams, Stack, useRouter } from "expo-router";
 import { useAgent } from "@/lib/hooks/useAgents";
@@ -10,6 +11,7 @@ export default function AgentChatScreen() {
   const router = useRouter();
   const { data: agent } = useAgent(id!);
   const { clearHistory } = useChat(id!);
+  const [showFilePanel, setShowFilePanel] = useState(false);
 
   return (
     <>
@@ -19,8 +21,15 @@ export default function AgentChatScreen() {
           agent={agent}
           onHistoryPress={clearHistory}
           onMorePress={() => router.back()}
+          onToggleFilePanel={() => setShowFilePanel((v) => !v)}
+          showFilePanel={showFilePanel}
         />
-        <ChatView agentId={id!} agentName={agent?.name} />
+        <ChatView
+          agentId={id!}
+          agentName={agent?.name}
+          showFilePanel={showFilePanel}
+          onCloseFilePanel={() => setShowFilePanel(false)}
+        />
       </View>
     </>
   );

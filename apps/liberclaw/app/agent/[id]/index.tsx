@@ -5,7 +5,7 @@ import Svg, { Circle } from "react-native-svg";
 import { useState, useRef, useEffect } from "react";
 import { useAgent, useDeleteAgent } from "@/lib/hooks/useAgents";
 import { useDeploymentStatus } from "@/lib/hooks/useDeployment";
-import { repairAgent, getAgentHealth } from "@/lib/api/agents";
+import { repairAgent, redeployAgent, getAgentHealth } from "@/lib/api/agents";
 import AgentStatusBadge from "@/components/agent/AgentStatusBadge";
 import { useQuery } from "@tanstack/react-query";
 import type { DeploymentStep, DeploymentLogEntry } from "@/lib/api/types";
@@ -412,6 +412,13 @@ export default function AgentDetailScreen() {
 
   const isUnhealthy = agent?.deployment_status === "running" && health && !health.healthy;
   const isFailed = agent?.deployment_status === "failed";
+  const needsUpgrade =
+    agent?.deployment_status === "running" &&
+    health?.healthy &&
+    health.agent_version != null &&
+    health.current_version != null &&
+    health.agent_version < health.current_version;
+  const [upgrading, setUpgrading] = useState(false);
 
   const handleAbort = async () => {
     setAborting(true);
@@ -432,6 +439,18 @@ export default function AgentDetailScreen() {
       await refetch();
     } finally {
       setRepairing(false);
+    }
+  };
+
+  const handleUpgrade = async () => {
+    setUpgrading(true);
+    try {
+      await redeployAgent(id!);
+      await refetch();
+    } catch {
+      await refetch();
+    } finally {
+      setUpgrading(false);
     }
   };
 
@@ -612,6 +631,37 @@ export default function AgentDetailScreen() {
                 <Text className="font-mono text-[10px] text-status-running uppercase">
                   Online
                 </Text>
+              </View>
+            )}
+
+            {needsUpgrade && (
+              <View className={`${cardClass} p-4 mb-4`}>
+                <View className="flex-row items-center mb-3">
+                  <MaterialIcons name="system-update" size={20} color="#ff5e00" />
+                  <Text className="text-sm text-claw-orange font-semibold ml-2 flex-1">
+                    Update available
+                  </Text>
+                  <Text className="font-mono text-[10px] text-text-tertiary">
+                    v{health!.agent_version} → v{health!.current_version}
+                  </Text>
+                </View>
+                <Text className="text-xs text-text-tertiary mb-3">
+                  A newer version of the agent runtime is available with new features and improvements. Upgrade to get the latest capabilities.
+                </Text>
+                <TouchableOpacity
+                  className="bg-claw-orange active:bg-claw-orange-dark rounded-lg py-3 flex-row items-center justify-center gap-2"
+                  onPress={handleUpgrade}
+                  disabled={upgrading}
+                >
+                  {upgrading ? (
+                    <ActivityIndicator color="#ffffff" />
+                  ) : (
+                    <>
+                      <MaterialIcons name="system-update" size={18} color="#ffffff" />
+                      <Text className="text-white font-bold">Upgrade Agent</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
               </View>
             )}
 

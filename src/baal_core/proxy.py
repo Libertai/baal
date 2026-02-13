@@ -131,6 +131,23 @@ async def health_check(agent_url: str) -> bool:
         return False
 
 
+async def health_check_detailed(agent_url: str) -> dict:
+    """Check agent health and return version info.
+
+    Returns:
+        {"healthy": bool, "agent_version": int | None}
+    """
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(f"{agent_url}/health")
+            if resp.status_code == 200:
+                data = resp.json()
+                return {"healthy": True, "agent_version": data.get("version")}
+            return {"healthy": False, "agent_version": None}
+    except Exception:
+        return {"healthy": False, "agent_version": None}
+
+
 _IMAGE_EXTENSIONS = frozenset({".jpg", ".jpeg", ".png", ".gif", ".webp"})
 _TELEGRAM_PHOTO_MAX = 10 * 1024 * 1024  # 10 MB
 

@@ -9,7 +9,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from baal_core.encryption import decrypt
-from baal_core.proxy import health_check
+from baal_core.proxy import health_check, health_check_detailed
 from liberclaw.auth.dependencies import get_current_user, get_settings
 from liberclaw.database.models import Agent, User
 from liberclaw.database.session import get_db, get_session_factory
@@ -202,12 +202,21 @@ async def check_agent_health(
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
 
+    from baal_agent import AGENT_VERSION
+
     healthy = False
+    agent_version = None
     if agent.vm_url:
-        healthy = await health_check(agent.vm_url)
+        result = await health_check_detailed(agent.vm_url)
+        healthy = result["healthy"]
+        agent_version = result["agent_version"]
 
     return AgentHealthResponse(
-        agent_id=agent.id, healthy=healthy, vm_url=agent.vm_url,
+        agent_id=agent.id,
+        healthy=healthy,
+        vm_url=agent.vm_url,
+        agent_version=agent_version,
+        current_version=AGENT_VERSION,
     )
 
 

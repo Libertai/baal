@@ -5,7 +5,7 @@
  * Simple border-t on native.
  */
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import {
   View,
   Text,
@@ -16,11 +16,24 @@ import {
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import Toggle from "@/components/ui/Toggle";
 
+export interface PendingFile {
+  file: File;
+  name: string;
+  size: number;
+  preview?: string;
+}
+
 interface ChatInputProps {
-  onSend: (text: string) => void;
+  onSend: (text: string, files?: PendingFile[]) => void;
   disabled?: boolean;
   showInternals: boolean;
   onToggleInternals: (value: boolean) => void;
+}
+
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 export default function ChatInput({
@@ -30,15 +43,80 @@ export default function ChatInput({
   onToggleInternals,
 }: ChatInputProps) {
   const [input, setInput] = useState("");
+  const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const canSend = input.trim().length > 0 && !disabled;
+  const canSend = (input.trim().length > 0 || pendingFiles.length > 0) && !disabled;
+
+  const addFiles = useCallback((files: FileList | File[]) => {
+    const newFiles: PendingFile[] = [];
+    for (const file of Array.from(files)) {
+      const pending: PendingFile = {
+        file,
+        name: file.name,
+        size: file.size,
+      };
+      // Generate preview for images
+      if (file.type.startsWith("image/")) {
+        pending.preview = URL.createObjectURL(file);
+      }
+      newFiles.push(pending);
+    }
+    setPendingFiles((prev) => [...prev, ...newFiles]);
+  }, []);
+
+  const removeFile = useCallback((index: number) => {
+    setPendingFiles((prev) => {
+      const removed = prev[index];
+      if (removed?.preview) URL.revokeObjectURL(removed.preview);
+      return prev.filter((_, i) => i !== index);
+    });
+  }, []);
 
   const handleSend = useCallback(() => {
     const text = input.trim();
-    if (!text || disabled) return;
+    if ((!text && pendingFiles.length === 0) || disabled) return;
     setInput("");
-    onSend(text);
-  }, [input, disabled, onSend]);
+    const files = pendingFiles.length > 0 ? [...pendingFiles] : undefined;
+    setPendingFiles([]);
+    onSend(text, files);
+  }, [input, pendingFiles, disabled, onSend]);
+
+  const handleAttachPress = useCallback(() => {
+    if (Platform.OS === "web") {
+      fileInputRef.current?.click();
+    }
+    // TODO: native picker via expo-document-picker
+  }, []);
+
+  const handleFileSelected = useCallback(
+    (e: any) => {
+      const files = e.target?.files;
+      if (files?.length) addFiles(files);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    },
+    [addFiles],
+  );
+
+  // Web drag-and-drop handlers
+  const dragHandlers =
+    Platform.OS === "web"
+      ? {
+          onDragOver: (e: any) => {
+            e.preventDefault();
+            setIsDragOver(true);
+          },
+          onDragLeave: () => setIsDragOver(false),
+          onDrop: (e: any) => {
+            e.preventDefault();
+            setIsDragOver(false);
+            if (e.dataTransfer?.files?.length) {
+              addFiles(e.dataTransfer.files);
+            }
+          },
+        }
+      : {};
 
   return (
     <View
@@ -74,14 +152,17 @@ export default function ChatInput({
           style={[
             {
               backgroundColor: "#131018",
-              borderWidth: 1,
-              borderColor: "rgba(255, 255, 255, 0.1)",
+              borderWidth: isDragOver ? 2 : 1,
+              borderColor: isDragOver
+                ? "#ff5e00"
+                : "rgba(255, 255, 255, 0.1)",
             },
             Platform.OS === "web" &&
               ({
                 boxShadow: "0 0 20px rgba(255, 94, 0, 0.3), 0 0 8px rgba(220, 38, 38, 0.2)",
               } as any),
           ]}
+          {...dragHandlers}
         >
           {/* Toolbar row */}
           <View
@@ -106,8 +187,13 @@ export default function ChatInput({
               <TouchableOpacity
                 className="p-1.5 rounded"
                 activeOpacity={0.7}
+                onPress={handleAttachPress}
               >
-                <MaterialIcons name="upload-file" size={18} color="#5a5464" />
+                <MaterialIcons
+                  name="upload-file"
+                  size={18}
+                  color={pendingFiles.length > 0 ? "#ff5e00" : "#5a5464"}
+                />
               </TouchableOpacity>
               <TouchableOpacity
                 className="p-1.5 rounded ml-1"
@@ -117,6 +203,64 @@ export default function ChatInput({
               </TouchableOpacity>
             </View>
           </View>
+
+          {/* Hidden file input (web) */}
+          {Platform.OS === "web" && (
+            <input
+              ref={fileInputRef as any}
+              type="file"
+              multiple
+              style={{ display: "none" }}
+              onChange={handleFileSelected}
+            />
+          )}
+
+          {/* Pending file chips */}
+          {pendingFiles.length > 0 && (
+            <View
+              className="flex-row flex-wrap gap-2 px-4 py-2"
+              style={{
+                borderBottomWidth: 1,
+                borderBottomColor: "rgba(255, 255, 255, 0.05)",
+              }}
+            >
+              {pendingFiles.map((pf, i) => (
+                <View
+                  key={`${pf.name}-${i}`}
+                  className="flex-row items-center rounded-lg px-3 py-1.5"
+                  style={{
+                    backgroundColor: "rgba(255, 94, 0, 0.1)",
+                    borderWidth: 1,
+                    borderColor: "rgba(255, 94, 0, 0.3)",
+                  }}
+                >
+                  <MaterialIcons
+                    name={pf.file.type?.startsWith("image/") ? "image" : "description"}
+                    size={14}
+                    color="#ff5e00"
+                    style={{ marginRight: 4 }}
+                  />
+                  <Text
+                    className="text-xs font-mono mr-1"
+                    style={{ color: "#ff5e00", maxWidth: 120 }}
+                    numberOfLines={1}
+                  >
+                    {pf.name}
+                  </Text>
+                  <Text className="text-[10px] font-mono mr-2" style={{ color: "#8a8494" }}>
+                    {formatSize(pf.size)}
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() => removeFile(i)}
+                    activeOpacity={0.7}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <MaterialIcons name="close" size={14} color="#8a8494" />
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </View>
+          )}
 
           {/* Textarea + send button */}
           <View style={{ position: "relative" }}>

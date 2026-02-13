@@ -11,32 +11,81 @@ import {
   FlatList,
   KeyboardAvoidingView,
   Platform,
+  Dimensions,
 } from "react-native";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { useChat } from "@/lib/hooks/useChat";
+import { useChatStore } from "@/lib/store/chat";
+import { uploadFile } from "@/lib/api/files";
+import { redeployAgent } from "@/lib/api/agents";
 import MessageBubble from "./MessageBubble";
 import TypingIndicator from "./TypingIndicator";
 import ChatInput from "./ChatInput";
+import FilePanel from "./FilePanel";
+import type { PendingFile } from "./ChatInput";
 
 interface ChatViewProps {
   agentId: string;
   agentName?: string;
+  showFilePanel?: boolean;
+  onCloseFilePanel?: () => void;
 }
 
-export default function ChatView({ agentId, agentName }: ChatViewProps) {
+export default function ChatView({
+  agentId,
+  agentName,
+  showFilePanel = false,
+  onCloseFilePanel,
+}: ChatViewProps) {
   const { messages, sendMessage, isStreaming } = useChat(agentId);
+  const { addMessage } = useChatStore();
   const [showInternals, setShowInternals] = useState(true);
+  const [isUpgrading, setIsUpgrading] = useState(false);
   const flatListRef = useRef<FlatList>(null);
 
   const handleSend = useCallback(
-    (text: string) => {
+    async (text: string, files?: PendingFile[]) => {
       if (isStreaming) return;
-      sendMessage(text);
+
+      let messageText = text;
+
+      // Upload files first if any
+      if (files && files.length > 0) {
+        for (const f of files) {
+          try {
+            const result = await uploadFile(agentId, f.file);
+            messageText = `[User uploaded ${result.name} to ${result.path}]\n${messageText}`;
+          } catch {
+            addMessage(agentId, {
+              type: "error",
+              content: `Failed to upload ${f.name}`,
+            });
+          }
+        }
+      }
+
+      if (messageText.trim()) {
+        sendMessage(messageText);
+      }
     },
-    [isStreaming, sendMessage],
+    [isStreaming, sendMessage, agentId, addMessage],
   );
 
-  return (
+  const handleUpgrade = useCallback(async () => {
+    setIsUpgrading(true);
+    try {
+      await redeployAgent(agentId);
+    } catch {
+      // ignore — user will see the deployment status change
+    } finally {
+      setIsUpgrading(false);
+    }
+  }, [agentId]);
+
+  const isDesktop =
+    Platform.OS === "web" && Dimensions.get("window").width >= 1024;
+
+  const chatContent = (
     <KeyboardAvoidingView
       className="flex-1 bg-surface-base"
       behavior={Platform.OS === "ios" ? "padding" : undefined}
@@ -84,6 +133,7 @@ export default function ChatView({ agentId, agentName }: ChatViewProps) {
             message={item}
             showInternals={showInternals}
             agentName={agentName}
+            agentId={agentId}
             isLastMessage={index === messages.length - 1}
             isStreaming={isStreaming}
           />
@@ -113,4 +163,38 @@ export default function ChatView({ agentId, agentName }: ChatViewProps) {
       />
     </KeyboardAvoidingView>
   );
+
+  // Desktop with file panel: side-by-side layout
+  if (showFilePanel && isDesktop) {
+    return (
+      <View style={{ flex: 1, flexDirection: "row" }}>
+        {chatContent}
+        <FilePanel
+          agentId={agentId}
+          visible={true}
+          onClose={onCloseFilePanel ?? (() => {})}
+          onUpgrade={handleUpgrade}
+          isUpgrading={isUpgrading}
+        />
+      </View>
+    );
+  }
+
+  // Mobile with file panel: overlay
+  if (showFilePanel && !isDesktop) {
+    return (
+      <View style={{ flex: 1 }}>
+        {chatContent}
+        <FilePanel
+          agentId={agentId}
+          visible={true}
+          onClose={onCloseFilePanel ?? (() => {})}
+          onUpgrade={handleUpgrade}
+          isUpgrading={isUpgrading}
+        />
+      </View>
+    );
+  }
+
+  return chatContent;
 }

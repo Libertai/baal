@@ -136,6 +136,8 @@ export interface AgentHealthResponse {
   agent_id: string;
   healthy: boolean;
   vm_url: string | null;
+  agent_version: number | null;
+  current_version: number | null;
 }
 
 export interface DeploymentStep {

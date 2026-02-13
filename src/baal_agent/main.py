@@ -7,7 +7,7 @@ import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
@@ -16,7 +16,7 @@ from baal_agent.config import AgentSettings
 from baal_agent.context import build_system_prompt
 from baal_agent.database import AgentDatabase
 from baal_agent.inference import InferenceClient
-from baal_agent.security import PathSecurityError, validate_workspace_path
+from baal_agent.security import MAX_SEND_FILE_SIZE, PathSecurityError, validate_workspace_path
 from baal_agent.tools import configure_tools, execute_tool, get_tool_definitions
 
 logger = logging.getLogger(__name__)
@@ -564,6 +564,58 @@ async def serve_file(file_path: str):
         return JSONResponse(status_code=403, content={"error": str(e)})
 
 
+@app.get("/workspace/tree")
+async def workspace_tree(max_depth: int = 5):
+    """Return recursive workspace file tree."""
+    SKIP_NAMES = {".env", ".git", "agent.db", "agent.db-shm", "agent.db-wal", "__pycache__", "node_modules"}
+
+    def walk(path: Path, depth: int) -> list[dict]:
+        if depth <= 0 or not path.is_dir():
+            return []
+        entries = []
+        try:
+            for entry in sorted(path.iterdir(), key=lambda e: (not e.is_dir(), e.name.lower())):
+                if entry.name in SKIP_NAMES:
+                    continue
+                rel = str(entry.relative_to(workspace_root))
+                if entry.is_dir():
+                    entries.append({"name": entry.name, "path": rel, "type": "dir", "children": walk(entry, depth - 1)})
+                else:
+                    entries.append({"name": entry.name, "path": rel, "type": "file", "size": entry.stat().st_size})
+        except PermissionError:
+            pass
+        return entries
+
+    workspace_root = Path(settings.workspace_path).resolve()
+    return {"tree": walk(workspace_root, max_depth)}
+
+
+@app.post("/files/upload")
+async def upload_file(
+    file: UploadFile = File(...),
+    path: str = Form(default="uploads"),
+):
+    """Upload a file to the agent workspace."""
+    workspace_root = Path(settings.workspace_path).resolve()
+    try:
+        target_dir = validate_workspace_path(path, settings.workspace_path)
+    except PathSecurityError as e:
+        return JSONResponse(status_code=403, content={"error": str(e)})
+
+    target_dir.mkdir(parents=True, exist_ok=True)
+    target_file = target_dir / file.filename
+
+    content = await file.read()
+    if len(content) > MAX_SEND_FILE_SIZE:
+        return JSONResponse(status_code=413, content={"error": "File too large (50MB max)"})
+
+    target_file.write_bytes(content)
+    rel = str(target_file.relative_to(workspace_root))
+    return {"path": rel, "size": len(content), "name": file.filename}
+
+
 @app.get("/health")
 async def health():
-    return {"status": "ok", "agent_name": settings.agent_name}
+    from baal_agent import AGENT_VERSION
+
+    return {"status": "ok", "agent_name": settings.agent_name, "version": AGENT_VERSION}

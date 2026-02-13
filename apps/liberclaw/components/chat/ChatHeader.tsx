@@ -30,12 +30,16 @@ interface ChatHeaderProps {
   agent: Agent | undefined;
   onHistoryPress?: () => void;
   onMorePress?: () => void;
+  onToggleFilePanel?: () => void;
+  showFilePanel?: boolean;
 }
 
 export default function ChatHeader({
   agent,
   onHistoryPress,
   onMorePress,
+  onToggleFilePanel,
+  showFilePanel = false,
 }: ChatHeaderProps) {
   const status = agent?.deployment_status ?? "pending";
   const cfg = STATUS_CONFIG[status];
@@ -93,6 +97,15 @@ export default function ChatHeader({
             {cfg.label}
           </Text>
         </View>
+        {onToggleFilePanel && (
+          <TouchableOpacity className="p-2" onPress={onToggleFilePanel}>
+            <MaterialIcons
+              name="folder-open"
+              size={22}
+              color={showFilePanel ? "#ff5e00" : "#94a3b8"}
+            />
+          </TouchableOpacity>
+        )}
         {onHistoryPress && (
           <TouchableOpacity className="p-2" onPress={onHistoryPress}>
             <MaterialIcons name="history" size={22} color="#94a3b8" />
