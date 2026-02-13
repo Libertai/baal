@@ -12,7 +12,8 @@ export default function AgentLayout() {
   const stack = (
     <Stack
       screenOptions={{
-        headerStyle: { backgroundColor: "#0a0810" },
+        headerStyle: { backgroundColor: "#0a0810", borderBottomWidth: 1, borderBottomColor: "#2a2235" },
+        headerShadowVisible: false,
         headerTintColor: "#f0ede8",
         headerTitleStyle: { fontWeight: "700", color: "#f0ede8" },
         headerShown: !isDesktopWeb,
@@ -27,11 +28,7 @@ export default function AgentLayout() {
   return (
     <View className="flex-1 flex-row bg-surface-base">
       <SidebarNav />
-      <View style={{ flex: 1, alignItems: "center" }}>
-        <View style={{ flex: 1, width: "100%", maxWidth: 1200 }}>
-          {stack}
-        </View>
-      </View>
+      <View className="flex-1">{stack}</View>
     </View>
   );
 }
