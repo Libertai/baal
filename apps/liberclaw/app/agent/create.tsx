@@ -232,7 +232,7 @@ export default function CreateAgentScreen() {
       />
       <ScrollView
         className="flex-1 bg-surface-base"
-        contentContainerStyle={{ padding: 24, flexGrow: 1 }}
+        contentContainerStyle={{ flexGrow: 1 }}
         keyboardShouldPersistTaps="handled"
       >
         {/* Background effects (web) */}
@@ -243,6 +243,7 @@ export default function CreateAgentScreen() {
           </>
         )}
 
+        <View style={{ padding: 24, flexGrow: 1, width: "100%", maxWidth: 1200, alignSelf: "center" } as any}>
         {/* Title */}
         <View className="items-center mb-8 mt-4">
           <View className="flex-row items-center justify-center mb-3">
@@ -553,6 +554,7 @@ export default function CreateAgentScreen() {
           {isWeb && (
             <DeploymentPreview name={name} model={model} />
           )}
+        </View>
         </View>
       </ScrollView>
     </>
