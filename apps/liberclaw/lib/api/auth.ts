@@ -78,3 +78,53 @@ export function getGoogleOAuthUrl(): string {
 export function getGitHubOAuthUrl(): string {
   return `${process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:8000/api/v1"}/auth/oauth/github`;
 }
+
+/**
+ * Start as guest using a device fingerprint.
+ */
+export async function guestLogin(deviceId: string): Promise<TokenPair> {
+  return apiFetch<TokenPair>("/auth/guest", {
+    method: "POST",
+    body: JSON.stringify({ device_id: deviceId }),
+    noAuth: true,
+  });
+}
+
+/**
+ * Verify a 6-digit magic link code.
+ */
+export async function verifyMagicLinkCode(
+  email: string,
+  code: string,
+): Promise<TokenPair> {
+  return apiFetch<TokenPair>("/auth/verify-magic-link", {
+    method: "POST",
+    body: JSON.stringify({ email, code }),
+    noAuth: true,
+  });
+}
+
+/**
+ * Authenticate with a Google ID token from native sign-in.
+ */
+export async function mobileGoogleLogin(idToken: string): Promise<TokenPair> {
+  return apiFetch<TokenPair>("/auth/mobile/google", {
+    method: "POST",
+    body: JSON.stringify({ id_token: idToken }),
+    noAuth: true,
+  });
+}
+
+/**
+ * Authenticate with an Apple identity token from native sign-in.
+ */
+export async function mobileAppleLogin(
+  identityToken: string,
+  fullName?: string,
+): Promise<TokenPair> {
+  return apiFetch<TokenPair>("/auth/mobile/apple", {
+    method: "POST",
+    body: JSON.stringify({ identity_token: identityToken, full_name: fullName }),
+    noAuth: true,
+  });
+}

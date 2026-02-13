@@ -15,7 +15,8 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "io.libertai.liberclaw"
+      "bundleIdentifier": "io.libertai.liberclaw",
+      "usesAppleSignIn": true
     },
     "android": {
       "adaptiveIcon": {
@@ -31,7 +32,8 @@
     "plugins": [
       "expo-router",
       "expo-secure-store",
-      "expo-font"
+      "expo-font",
+      "@react-native-google-signin/google-signin"
     ]
   }
 }
