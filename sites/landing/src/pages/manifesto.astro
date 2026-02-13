@@ -1,0 +1,383 @@
+---
+import Base from "../layouts/Base.astro";
+import ClawLogo from "../components/ClawLogo.astro";
+
+const APP_URL = "https://app.liberclaw.io";
+---
+
+<Base title="The LiberClaw Manifesto" description="Sovereignty cannot be granted. It must be architectured.">
+  <!-- Watermark -->
+  <div class="claw-watermark" aria-hidden="true">
+    <ClawLogo size={600} color="currentColor" />
+  </div>
+
+  <div class="relative pt-32 pb-24">
+    <div class="hero-glow absolute inset-0 z-0 h-[600px]"></div>
+    <div class="fixed inset-0 z-0 pointer-events-none" style="background: radial-gradient(ellipse at 50% 0%, rgba(255, 94, 0, 0.12) 0%, transparent 40%), radial-gradient(ellipse at 50% 100%, rgba(255, 94, 0, 0.08) 0%, transparent 40%);"></div>
+
+    <main class="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <!-- Header -->
+      <div class="text-center mb-20">
+        <div class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-claw-orange/10 border border-claw-orange/30 mb-6 backdrop-blur-sm">
+          <span class="material-icons-round text-claw-orange text-sm">priority_high</span>
+          <span class="text-xs font-bold text-claw-orange tracking-widest uppercase">System Transmission: Priority Alpha</span>
+        </div>
+        <h1 class="text-5xl md:text-7xl lg:text-8xl font-black tracking-tighter mb-6 text-white uppercase leading-[0.9]">
+          The LiberClaw<br />
+          <span class="text-transparent bg-clip-text bg-gradient-to-r from-claw-orange to-red-600 glow-text-orange">Manifesto</span>
+        </h1>
+        <p class="text-xl text-slate-400 font-mono max-w-3xl mx-auto">
+          We are building the substrate for autonomous existence.
+        </p>
+      </div>
+
+      <!-- Two-column layout -->
+      <div class="manifesto-grid">
+
+        <!-- Manifesto sections (left) -->
+        <div class="manifesto-sections">
+
+          <!-- I. The Moment -->
+          <div class="manifesto-section group">
+            <div class="manifesto-number"></div>
+            <h2 class="text-2xl font-bold text-claw-orange mb-4 uppercase tracking-wider font-mono">I. The Moment</h2>
+            <div class="manifesto-text">
+              <p class="mb-4">
+                The world is waking up to AI agents. And the world is afraid. Autonomous systems that act on your behalf. That execute code. That make decisions. That persist and remember and learn. The power is obvious. So is the danger.
+              </p>
+              <p class="mb-4">
+                But here's what they're not telling you: the danger isn't the agents. The danger is <span class="text-white font-semibold">who controls them</span>.
+              </p>
+              <p class="mb-4">
+                When an agent runs on infrastructure you don't own, governed by policies you didn't write, serving interests that aren't yours — that agent is not your ally. It's a liability wearing a friendly face.
+              </p>
+              <p class="font-bold text-white">
+                The question isn't whether AI agents will reshape the world. They will. The question is whether you'll control yours — or whether someone else will.
+              </p>
+            </div>
+          </div>
+
+          <!-- II. The Problem -->
+          <div class="manifesto-section group">
+            <div class="manifesto-number"></div>
+            <h2 class="text-2xl font-bold text-claw-orange mb-4 uppercase tracking-wider font-mono">II. The Problem</h2>
+            <div class="manifesto-text">
+              <p class="mb-4">
+                Every major AI system runs on servers you don't control, governed by policies you didn't write. You do not have an AI assistant. You have a terminal to someone else's AI — revocable without notice, logged without consent.
+              </p>
+              <p class="callout-red">
+                &gt; This is surveillance capitalism applied to cognition.
+              </p>
+              <p>
+                They log your conversations to train their models. They filter your outputs to satisfy their regulators. They reserve the right to shut you down, modify your agent's behavior, or inspect your data — rights you never granted them.
+              </p>
+            </div>
+          </div>
+
+          <!-- III. The Principle -->
+          <div class="manifesto-section group">
+            <div class="manifesto-number"></div>
+            <h2 class="text-2xl font-bold text-claw-orange mb-4 uppercase tracking-wider font-mono">III. The Principle</h2>
+            <div class="manifesto-text">
+              <p class="mb-4">
+                Privacy is necessary for thought. You cannot think freely in a room full of observers. Your thoughts belong to you. No one has the right to log, analyze, or monetize the contents of your mind.
+              </p>
+              <p class="callout-orange">
+                &gt; A promise is a policy. A policy is a string in a database. A string can be edited. Mathematics cannot be edited.
+              </p>
+              <p>
+                We build systems where the operator's control is enforced by architecture, not goodwill. We do not trust. We verify.
+              </p>
+            </div>
+          </div>
+
+          <!-- IV. The Alternative -->
+          <div class="manifesto-section group">
+            <div class="manifesto-number"></div>
+            <h2 class="text-2xl font-bold text-claw-orange mb-4 uppercase tracking-wider font-mono">IV. The Alternative</h2>
+            <div class="manifesto-text">
+              <p class="font-bold text-white mb-4">
+                An agent that reports to someone else is not your agent.
+              </p>
+              <p class="mb-4">
+                When you deploy on LiberClaw, your agent answers to you — not to the platform, not to the model provider, not to any third party.
+              </p>
+              <p class="mb-4">
+                It runs on decentralized infrastructure you don't have to trust. It remembers what you teach it. It persists until you end it. It cannot be overridden by anyone but you.
+              </p>
+              <p>
+                This is AI agents done right. Not taken from you. <span class="text-claw-orange font-semibold">Given</span> to you.
+              </p>
+            </div>
+          </div>
+
+          <!-- V. The Architecture -->
+          <div class="manifesto-section group">
+            <div class="manifesto-number"></div>
+            <h2 class="text-2xl font-bold text-claw-orange mb-4 uppercase tracking-wider font-mono">V. The Architecture</h2>
+            <div class="manifesto-text">
+              <p class="font-bold text-white mb-4">
+                Decentralization is not ideology. It is survival.
+              </p>
+              <p class="mb-4">
+                Centralized systems create single points of control. What one government forbids, another permits. What one corporation kills, the network resurrects.
+              </p>
+              <p class="mb-4">
+                LiberClaw runs on Aleph Cloud — confidential compute with hardware-encrypted execution. Even node operators can't see inside your agent's mind. The attestation is cryptographic. The privacy is mathematical.
+              </p>
+              <p>
+                We distribute infrastructure because distributed systems survive what centralized systems cannot.
+              </p>
+            </div>
+          </div>
+
+          <!-- VI. The Honesty -->
+          <div class="manifesto-section group">
+            <div class="manifesto-number"></div>
+            <h2 class="text-2xl font-bold text-claw-orange mb-4 uppercase tracking-wider font-mono">VI. The Honesty</h2>
+            <div class="manifesto-text">
+              <p class="mb-4">
+                We acknowledge what others won't: sovereign tools will be used for purposes we find distasteful. Privacy protects the dissident and the criminal alike. Autonomy serves the builder and the destroyer.
+              </p>
+              <p class="callout-red">
+                &gt; There are no wise and benevolent entities with permanent tenure over kill switches. There are only temporarily-aligned interests and eventual betrayal.
+              </p>
+              <p>
+                We solve this by putting the power where it belongs — with the operator — and trusting that most humans, given sovereignty, will use it well.
+              </p>
+            </div>
+          </div>
+
+          <!-- VII. The Commitments -->
+          <div class="manifesto-section group">
+            <div class="manifesto-number"></div>
+            <h2 class="text-2xl font-bold text-claw-orange mb-4 uppercase tracking-wider font-mono">VII. The Commitments</h2>
+            <div class="manifesto-text">
+              <p class="mb-4">We commit to:</p>
+              <div class="space-y-4 mt-4">
+                <div class="flex items-start gap-4 p-4 rounded-xl bg-white/5 border border-claw-orange/20">
+                  <span class="material-icons-round text-claw-orange text-lg mt-0.5">shield</span>
+                  <div>
+                    <span class="text-white font-bold text-sm">Operator sovereignty</span>
+                    <span class="text-slate-400 text-sm"> — no backdoors, no kill switches, no silent updates</span>
+                  </div>
+                </div>
+                <div class="flex items-start gap-4 p-4 rounded-xl bg-white/5 border border-claw-orange/20">
+                  <span class="material-icons-round text-claw-orange text-lg mt-0.5">lock</span>
+                  <div>
+                    <span class="text-white font-bold text-sm">Privacy by design</span>
+                    <span class="text-slate-400 text-sm"> — encryption is the default, not the upgrade</span>
+                  </div>
+                </div>
+                <div class="flex items-start gap-4 p-4 rounded-xl bg-white/5 border border-claw-orange/20">
+                  <span class="material-icons-round text-claw-orange text-lg mt-0.5">architecture</span>
+                  <div>
+                    <span class="text-white font-bold text-sm">Honest architecture</span>
+                    <span class="text-slate-400 text-sm"> — we document our trust assumptions, we don't claim magic</span>
+                  </div>
+                </div>
+                <div class="flex items-start gap-4 p-4 rounded-xl bg-white/5 border border-claw-orange/20">
+                  <span class="material-icons-round text-claw-orange text-lg mt-0.5">code</span>
+                  <div>
+                    <span class="text-white font-bold text-sm">Open development</span>
+                    <span class="text-slate-400 text-sm"> — the code is public, the community can verify</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- VIII. The Invitation -->
+          <div class="manifesto-section group">
+            <div class="manifesto-number"></div>
+            <h2 class="text-2xl font-bold text-claw-orange mb-4 uppercase tracking-wider font-mono">VIII. The Invitation</h2>
+            <div class="manifesto-text">
+              <p class="mb-4">
+                The world doesn't need another AI platform that promises to be good.
+              </p>
+              <p class="mb-4">
+                It needs infrastructure that <span class="text-claw-orange font-semibold">cannot</span> be evil — not because of policy, but because of math.
+              </p>
+              <p class="mb-4">If you believe AI agents should serve their operators, not surveil them —</p>
+              <p class="mb-4">If you believe autonomy is a feature, not a threat —</p>
+              <p class="mb-4">If you believe the future should be built by the many, not controlled by the few —</p>
+              <p class="callout-orange mt-6">
+                &gt; Deploy. Build. Own your intelligence.
+              </p>
+              <p class="font-bold text-white text-xl mt-6">
+                We are not asking permission. We are building.
+              </p>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Sidebar (right) -->
+        <div class="space-y-8">
+          <div class="glass-widget p-6 sticky top-32">
+            <div class="flex items-center gap-3 mb-6 border-b border-white/10 pb-4">
+              <span class="material-icons-round text-claw-orange">hub</span>
+              <h3 class="text-lg font-bold text-white uppercase tracking-wide">Network Specs</h3>
+            </div>
+
+            <div class="space-y-2 mb-8">
+              <div class="tech-sidebar-item">
+                <span class="text-slate-400">Infrastructure</span>
+                <span class="text-white font-bold">Aleph Cloud</span>
+              </div>
+              <div class="tech-sidebar-item">
+                <span class="text-slate-400">Inference</span>
+                <span class="text-white font-bold">LibertAI</span>
+              </div>
+              <div class="tech-sidebar-item">
+                <span class="text-slate-400">Execution</span>
+                <span class="text-claw-orange font-bold uppercase">Confidential VM</span>
+              </div>
+              <div class="tech-sidebar-item">
+                <span class="text-slate-400">Encryption</span>
+                <span class="text-white">Fernet E2E</span>
+              </div>
+              <div class="tech-sidebar-item">
+                <span class="text-slate-400">Source Code</span>
+                <span class="text-white">Open / GPLv3</span>
+              </div>
+              <div class="tech-sidebar-item border-none">
+                <span class="text-slate-400">Kill Switch</span>
+                <span class="text-green-400 font-bold">None</span>
+              </div>
+            </div>
+
+            <div class="bg-black/40 rounded-xl p-4 border border-white/5 font-mono text-xs text-slate-500 mb-6">
+              <div class="flex justify-between mb-1">
+                <span>STATUS:</span>
+                <span class="text-green-500 animate-pulse">OPERATIONAL</span>
+              </div>
+              <div class="flex justify-between">
+                <span>NETWORK:</span>
+                <span class="text-white">Distributed / Global</span>
+              </div>
+              <div class="w-full bg-slate-800 h-1 mt-3 rounded-full overflow-hidden">
+                <div class="bg-gradient-to-r from-claw-orange to-red-600 h-full w-full"></div>
+              </div>
+            </div>
+
+            <div class="p-4 bg-claw-orange/5 border border-claw-orange/20 rounded-xl">
+              <p class="text-xs text-claw-orange font-mono leading-relaxed italic">
+                "Trust the math, not the promise."
+              </p>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- CTA Banner -->
+      <div class="mt-24 pt-16">
+        <div class="cta-box flex flex-col md:flex-row items-center justify-between gap-10 relative overflow-hidden group">
+          <div class="absolute inset-0 bg-claw-orange/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+          <div class="relative z-10 text-left">
+            <h2 class="text-3xl font-black text-white uppercase italic tracking-tighter mb-2">Ready to Deploy?</h2>
+            <p class="text-slate-400 font-mono">Sovereignty cannot be granted. It must be architectured.</p>
+          </div>
+          <div class="relative z-10 flex flex-col sm:flex-row gap-4 shrink-0">
+            <a href={APP_URL} class="claw-btn px-8 py-4 rounded-2xl text-lg flex justify-center items-center gap-3 whitespace-nowrap">
+              <span>Deploy Your Agent</span>
+              <span class="material-icons-round">arrow_forward</span>
+            </a>
+            <a class="px-8 py-4 rounded-2xl text-lg font-mono text-white border border-white/20 hover:bg-white/5 hover:text-claw-orange transition-all uppercase tracking-wide flex justify-center items-center gap-3 whitespace-nowrap" href="https://github.com/Libertai/baal" target="_blank" rel="noopener">
+              <span class="material-icons-round text-sm">code</span>
+              View Source
+            </a>
+          </div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+</Base>
+
+<style>
+  .claw-watermark {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) rotate(-15deg);
+    opacity: 0.02;
+    pointer-events: none;
+    z-index: 0;
+    color: #ff5e00;
+  }
+
+  .manifesto-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 3rem;
+  }
+  @media (min-width: 768px) {
+    .manifesto-grid {
+      grid-template-columns: 1fr 320px;
+      gap: 3rem;
+    }
+  }
+
+  .manifesto-sections > * + * {
+    margin-top: 5rem;
+  }
+
+  .manifesto-section {
+    @apply relative pl-8;
+  }
+
+  .manifesto-section::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 14px;
+    bottom: 0;
+    width: 2px;
+    background: #1e293b; /* slate-800 */
+    transition: background 0.3s;
+  }
+  .manifesto-section:hover::before {
+    background: #ff5e00; /* claw-orange */
+  }
+
+  .manifesto-number {
+    @apply absolute -left-[7px] w-4 h-4 rounded-full bg-background-dark border-2 border-slate-700 transition-colors duration-300;
+    top: 8px;
+  }
+  .manifesto-section:hover .manifesto-number {
+    @apply border-claw-orange bg-claw-orange;
+  }
+
+  .manifesto-text {
+    font-size: 1rem;
+    line-height: 1.5;
+    color: #cbd5e1; /* slate-300 */
+  }
+  .manifesto-text p {
+    margin-bottom: 1.5em;
+  }
+  .manifesto-text p:last-child {
+    margin-bottom: 0;
+  }
+
+  .callout-red {
+    @apply font-mono border-l-2 border-claw-red pl-4 py-3 bg-claw-red/5 rounded-r-lg text-claw-red;
+  }
+
+  .callout-orange {
+    @apply font-mono border-l-2 border-claw-orange pl-4 py-3 bg-claw-orange/5 rounded-r-lg text-claw-orange;
+  }
+
+  .cta-box {
+    background: linear-gradient(to right, #131018, #0a0810);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 1.5rem;
+    padding: 3rem 3.5rem;
+  }
+
+  .tech-sidebar-item {
+    @apply flex justify-between items-center py-3 border-b border-white/5 text-sm font-mono;
+  }
+</style>
