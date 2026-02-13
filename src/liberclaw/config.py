@@ -62,9 +62,16 @@ class LiberClawSettings(BaseSettings):
     api_url: str = "http://localhost:8000"
     cors_origins: list[str] = ["http://localhost:8081"]
 
+    # Apple Sign In
+    apple_bundle_id: str = "io.libertai.liberclaw"
+
     # Limits
     free_tier_daily_messages: int = 50
     max_agents_per_user: int = 5
+
+    # Guest tier limits
+    guest_daily_messages: int = 5
+    guest_max_agents: int = 1
     default_model: str = "qwen3-coder-next"
 
     # VM Pool

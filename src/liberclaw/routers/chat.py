@@ -38,9 +38,11 @@ async def send_message(
         raise HTTPException(status_code=400, detail="Agent is not running")
 
     # Rate limiting
-    allowed, remaining = await check_and_increment(
-        db, user.id, settings.free_tier_daily_messages
+    daily_limit = (
+        settings.guest_daily_messages if user.tier == "guest"
+        else settings.free_tier_daily_messages
     )
+    allowed, remaining = await check_and_increment(db, user.id, daily_limit)
     if not allowed:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,

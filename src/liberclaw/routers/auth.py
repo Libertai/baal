@@ -17,7 +17,8 @@ from liberclaw.auth.jwt import (
     create_refresh_token,
     decode_refresh_token,
 )
-from liberclaw.auth.magic_link import create_magic_link, verify_and_consume_magic_link
+from liberclaw.auth.id_token import verify_apple_id_token, verify_google_id_token
+from liberclaw.auth.magic_link import create_magic_link, verify_and_consume_magic_link, verify_code
 from liberclaw.auth.oauth import (
     create_github_client,
     create_google_client,
@@ -33,6 +34,9 @@ from liberclaw.database.models import (
 )
 from liberclaw.database.session import get_db
 from liberclaw.schemas.auth import (
+    AppleIdTokenRequest,
+    GoogleIdTokenRequest,
+    GuestRequest,
     MagicLinkRequest,
     MagicLinkResponse,
     MagicLinkVerifyRequest,
@@ -158,12 +162,13 @@ async def request_magic_link(
     if not settings.magic_link_secret:
         raise HTTPException(status_code=501, detail="Magic link auth not configured (set LIBERCLAW_MAGIC_LINK_SECRET)")
 
-    token = await create_magic_link(db, body.email, settings.magic_link_secret)
+    token, code = await create_magic_link(db, body.email, settings.magic_link_secret)
     await send_magic_link_email(
         body.email,
         token,
         settings.frontend_url,
         settings.resend_api_key,
+        code=code,
         smtp_host=settings.smtp_host,
         smtp_port=settings.smtp_port,
         smtp_user=settings.smtp_user,
@@ -180,11 +185,20 @@ async def verify_magic_link(
     request: Request,
     db: AsyncSession = Depends(get_db),
 ):
-    """Verify a magic link token and return JWT pair."""
+    """Verify a magic link token or 6-digit code and return JWT pair."""
     settings = get_settings()
-    email = await verify_and_consume_magic_link(db, body.token, settings.magic_link_secret)
+
+    email: str | None = None
+
+    if body.token:
+        email = await verify_and_consume_magic_link(db, body.token, settings.magic_link_secret)
+    elif body.email and body.code:
+        email = await verify_code(db, body.email, body.code)
+    else:
+        raise HTTPException(status_code=400, detail="Provide either token or email+code")
+
     if not email:
-        raise HTTPException(status_code=400, detail="Invalid or expired magic link")
+        raise HTTPException(status_code=400, detail="Invalid or expired code")
 
     user = await _get_or_create_user_by_email(db, email)
     device_info = request.headers.get("user-agent", "")[:500]
@@ -376,6 +390,104 @@ async def wallet_verify(
         )
         db.add(wallet_conn)
         await db.flush()
+
+    device_info = request.headers.get("user-agent", "")[:500]
+    return await _create_session_and_tokens(db, user, device_info)
+
+
+# ── Guest Auth ─────────────────────────────────────────────────────
+
+
+@router.post("/guest", response_model=TokenPair)
+async def guest_login(
+    body: GuestRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Create or re-login a guest user by device ID."""
+    if not body.device_id or len(body.device_id) > 255:
+        raise HTTPException(status_code=400, detail="Invalid device ID")
+
+    result = await db.execute(
+        select(User).where(User.device_id == body.device_id)
+    )
+    user = result.scalar_one_or_none()
+
+    if user:
+        device_info = request.headers.get("user-agent", "")[:500]
+        return await _create_session_and_tokens(db, user, device_info)
+
+    user = User(tier="guest", device_id=body.device_id)
+    db.add(user)
+    await db.flush()
+
+    device_info = request.headers.get("user-agent", "")[:500]
+    return await _create_session_and_tokens(db, user, device_info)
+
+
+# ── Mobile OAuth — Google ID Token ────────────────────────────────
+
+
+@router.post("/mobile/google", response_model=TokenPair)
+async def mobile_google_login(
+    body: GoogleIdTokenRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Verify a Google ID token from native sign-in and return JWT pair."""
+    settings = get_settings()
+    if not settings.google_client_id:
+        raise HTTPException(status_code=501, detail="Google auth not configured")
+
+    claims = await verify_google_id_token(body.id_token, settings.google_client_id)
+    if not claims:
+        raise HTTPException(status_code=401, detail="Invalid Google ID token")
+
+    email = claims.get("email")
+    if not email:
+        raise HTTPException(status_code=400, detail="No email in Google token")
+
+    user_info = {
+        "provider": "google",
+        "provider_id": claims["sub"],
+        "email": email,
+        "email_verified": claims.get("email_verified", False),
+        "name": claims.get("name"),
+        "avatar_url": claims.get("picture"),
+    }
+    user = await _link_oauth(db, user_info)
+
+    device_info = request.headers.get("user-agent", "")[:500]
+    return await _create_session_and_tokens(db, user, device_info)
+
+
+# ── Mobile OAuth — Apple ID Token ─────────────────────────────────
+
+
+@router.post("/mobile/apple", response_model=TokenPair)
+async def mobile_apple_login(
+    body: AppleIdTokenRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Verify an Apple identity token from native sign-in and return JWT pair."""
+    settings = get_settings()
+
+    claims = await verify_apple_id_token(body.identity_token, settings.apple_bundle_id)
+    if not claims:
+        raise HTTPException(status_code=401, detail="Invalid Apple identity token")
+
+    email = claims.get("email")
+    apple_sub = claims["sub"]
+
+    user_info = {
+        "provider": "apple",
+        "provider_id": apple_sub,
+        "email": email,
+        "email_verified": claims.get("email_verified", True),
+        "name": body.full_name,
+    }
+    user = await _link_oauth(db, user_info)
 
     device_info = request.headers.get("user-agent", "")[:500]
     return await _create_session_and_tokens(db, user, device_info)

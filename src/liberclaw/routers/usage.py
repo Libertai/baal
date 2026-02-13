@@ -24,11 +24,20 @@ async def get_usage_summary(
     daily_used = await get_daily_usage(db, user.id)
     agent_count = await get_agent_count(db, user.id)
 
+    daily_limit = (
+        settings.guest_daily_messages if user.tier == "guest"
+        else settings.free_tier_daily_messages
+    )
+    agent_limit = (
+        settings.guest_max_agents if user.tier == "guest"
+        else settings.max_agents_per_user
+    )
+
     return UsageSummary(
         daily_messages_used=daily_used,
-        daily_messages_limit=settings.free_tier_daily_messages,
+        daily_messages_limit=daily_limit,
         agent_count=agent_count,
-        agent_limit=settings.max_agents_per_user,
+        agent_limit=agent_limit,
         tier=user.tier,
     )
 

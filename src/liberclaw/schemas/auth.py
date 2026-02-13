@@ -16,7 +16,9 @@ class MagicLinkResponse(BaseModel):
 
 
 class MagicLinkVerifyRequest(BaseModel):
-    token: str
+    token: str | None = None
+    email: EmailStr | None = None
+    code: str | None = None
 
 
 class TokenPair(BaseModel):
@@ -43,3 +45,16 @@ class WalletVerifyRequest(BaseModel):
     address: str
     signature: str
     nonce: str
+
+
+class GuestRequest(BaseModel):
+    device_id: str
+
+
+class GoogleIdTokenRequest(BaseModel):
+    id_token: str
+
+
+class AppleIdTokenRequest(BaseModel):
+    identity_token: str
+    full_name: str | None = None

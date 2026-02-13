@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import hashlib
+import random
 import secrets
+import string
 from datetime import datetime, timedelta, timezone
 
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
@@ -38,22 +40,30 @@ def hash_token(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
+def generate_code() -> str:
+    """Generate a random 6-digit numeric code."""
+    return "".join(random.choices(string.digits, k=6))
+
+
 async def create_magic_link(
     db: AsyncSession, email: str, secret: str
-) -> str:
-    """Create a magic link record and return the token."""
+) -> tuple[str, str]:
+    """Create a magic link record and return (token, code)."""
     token = generate_magic_link_token(email, secret)
     token_hash = hash_token(token)
+    code = generate_code()
+    code_hash_val = hash_token(code)
     expires_at = datetime.now(timezone.utc) + timedelta(minutes=15)
 
     link = MagicLink(
         email=email,
         token_hash=token_hash,
+        code_hash=code_hash_val,
         expires_at=expires_at,
     )
     db.add(link)
     await db.flush()
-    return token
+    return token, code
 
 
 async def verify_and_consume_magic_link(
@@ -79,5 +89,33 @@ async def verify_and_consume_magic_link(
         return None
 
     # Mark as used
+    link.used_at = datetime.now(timezone.utc)
+    return email
+
+
+async def verify_code(
+    db: AsyncSession, email: str, code: str
+) -> str | None:
+    """Verify a 6-digit code. Returns email or None. Max 5 attempts."""
+    result = await db.execute(
+        select(MagicLink).where(
+            MagicLink.email == email,
+            MagicLink.used_at.is_(None),
+            MagicLink.code_hash.is_not(None),
+            MagicLink.expires_at > datetime.now(timezone.utc),
+        ).order_by(MagicLink.created_at.desc()).limit(1)
+    )
+    link = result.scalar_one_or_none()
+    if not link:
+        return None
+
+    if link.attempts >= 5:
+        return None
+
+    link.attempts += 1
+
+    if link.code_hash != hash_token(code):
+        return None
+
     link.used_at = datetime.now(timezone.utc)
     return email

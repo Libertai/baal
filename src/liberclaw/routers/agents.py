@@ -60,11 +60,15 @@ async def create_user_agent(
     settings = get_settings()
 
     # Check agent limit
+    agent_limit = (
+        settings.guest_max_agents if user.tier == "guest"
+        else settings.max_agents_per_user
+    )
     count = await get_agent_count(db, user.id)
-    if count >= settings.max_agents_per_user:
+    if count >= agent_limit:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Agent limit reached ({settings.max_agents_per_user})",
+            detail=f"Agent limit reached ({agent_limit})",
         )
 
     agent = await create_agent(

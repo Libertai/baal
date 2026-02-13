@@ -10,11 +10,20 @@ from email.mime.text import MIMEText
 logger = logging.getLogger(__name__)
 
 
-def _build_html(verify_url: str) -> str:
+def _build_html(verify_url: str, code: str = "") -> str:
+    code_section = ""
+    if code:
+        code_section = (
+            '<p style="font-size: 24px; font-weight: bold; letter-spacing: 8px; '
+            f'text-align: center; margin: 20px 0;">{code}</p>'
+            '<p style="text-align: center; color: #666;">Enter this code in the app</p>'
+            '<p style="text-align: center; color: #666;">&mdash; or &mdash;</p>'
+        )
     return (
         "<h2>Sign in to LiberClaw</h2>"
-        "<p>Click the link below to sign in. This link expires in 15 minutes.</p>"
-        f'<p><a href="{verify_url}">Sign in to LiberClaw</a></p>'
+        f"{code_section}"
+        f'<p><a href="{verify_url}">Click here to sign in</a></p>'
+        "<p>This link and code expire in 15 minutes.</p>"
         "<p>If you didn't request this, you can safely ignore this email.</p>"
     )
 
@@ -25,6 +34,7 @@ async def send_magic_link_email(
     frontend_url: str,
     resend_api_key: str = "",
     *,
+    code: str = "",
     smtp_host: str = "",
     smtp_port: int = 587,
     smtp_user: str = "",
@@ -40,17 +50,19 @@ async def send_magic_link_email(
         return _send_smtp(
             to_email, verify_url,
             smtp_host, smtp_port, smtp_user, smtp_password, smtp_from, smtp_use_tls,
+            code=code,
         )
 
     # 2. Resend if configured
     if resend_api_key:
-        return _send_resend(to_email, verify_url, resend_api_key, smtp_from)
+        return _send_resend(to_email, verify_url, resend_api_key, smtp_from, code=code)
 
     # 3. Dev fallback: log to console
     logger.warning("No email provider configured — logging magic link to console")
     logger.info("=" * 60)
     logger.info(f"MAGIC LINK for {to_email}")
     logger.info(f"Token: {token}")
+    logger.info(f"Code: {code}")
     logger.info(f"URL:   {verify_url}")
     logger.info("=" * 60)
     return True
@@ -65,13 +77,15 @@ def _send_smtp(
     password: str,
     from_addr: str,
     use_tls: bool,
+    *,
+    code: str = "",
 ) -> bool:
     try:
         msg = MIMEMultipart("alternative")
         msg["Subject"] = "Sign in to LiberClaw"
         msg["From"] = from_addr
         msg["To"] = to_email
-        msg.attach(MIMEText(_build_html(verify_url), "html"))
+        msg.attach(MIMEText(_build_html(verify_url, code=code), "html"))
 
         with smtplib.SMTP(host, port) as server:
             if use_tls:
@@ -92,6 +106,8 @@ def _send_resend(
     verify_url: str,
     api_key: str,
     from_addr: str,
+    *,
+    code: str = "",
 ) -> bool:
     try:
         import resend
@@ -100,7 +116,7 @@ def _send_resend(
             "from": from_addr,
             "to": [to_email],
             "subject": "Sign in to LiberClaw",
-            "html": _build_html(verify_url),
+            "html": _build_html(verify_url, code=code),
         })
         logger.info(f"Magic link email sent to {to_email} via Resend")
         return True
