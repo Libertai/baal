@@ -492,6 +492,7 @@ class AlephDeployer:
         instance_hash: str,
         owner_chat_id: str = "",
         on_progress=None,
+        skills: list[str] | None = None,
     ) -> dict:
         """SSH into a VM and deploy the agent code + Caddy reverse proxy.
 
@@ -571,12 +572,22 @@ class AlephDeployer:
                 "steps": steps,
             }
 
-        # Copy workspace template (no-clobber so re-deploys don't overwrite)
+        # Copy base workspace template (memory only, no-clobber)
         await self._ssh_run(
             vm_ip, ssh_port,
-            f"cp -rn {agent_dir}/baal_agent/workspace /opt/baal-agent/workspace 2>/dev/null; "
+            f"cp -rn {agent_dir}/baal_agent/workspace/memory /opt/baal-agent/workspace/memory 2>/dev/null; "
             f"mkdir -p /opt/baal-agent/workspace/memory /opt/baal-agent/workspace/skills",
         )
+
+        # Deploy selected skills from shared library
+        if skills:
+            await self._deploy_skills(vm_ip, ssh_port, skills)
+        else:
+            # Backward compat: copy all bundled skills from agent workspace
+            await self._ssh_run(
+                vm_ip, ssh_port,
+                f"cp -rn {agent_dir}/baal_agent/workspace/skills/* /opt/baal-agent/workspace/skills/ 2>/dev/null || true",
+            )
 
         steps.append({"step": "write_agent_code", "success": True})
 
@@ -746,6 +757,7 @@ class AlephDeployer:
         libertai_api_key: str,
         agent_secret: str,
         owner_chat_id: str = "",
+        skills: list[str] | None = None,
     ) -> dict:
         """Deploy only agent code to a VM already prepared by prepare_vm().
 
@@ -775,12 +787,22 @@ class AlephDeployer:
         if code != 0:
             return {"status": "error", "error": f"Failed to deploy agent code: {stderr}", "steps": steps}
 
-        # Copy workspace template (no-clobber so re-deploys don't overwrite)
+        # Copy base workspace template (memory only, no-clobber)
         await self._ssh_run(
             vm_ip, ssh_port,
-            f"cp -rn {agent_dir}/baal_agent/workspace /opt/baal-agent/workspace 2>/dev/null; "
+            f"cp -rn {agent_dir}/baal_agent/workspace/memory /opt/baal-agent/workspace/memory 2>/dev/null; "
             f"mkdir -p /opt/baal-agent/workspace/memory /opt/baal-agent/workspace/skills",
         )
+
+        # Deploy selected skills from shared library
+        if skills:
+            await self._deploy_skills(vm_ip, ssh_port, skills)
+        else:
+            # Backward compat: copy all bundled skills from agent workspace
+            await self._ssh_run(
+                vm_ip, ssh_port,
+                f"cp -rn {agent_dir}/baal_agent/workspace/skills/* /opt/baal-agent/workspace/skills/ 2>/dev/null || true",
+            )
         steps.append({"step": "write_agent_code", "success": True})
 
         # Write .env file
@@ -854,6 +876,23 @@ class AlephDeployer:
         → src/baal_agent/
         """
         return Path(__file__).resolve().parent.parent / "baal_agent"
+
+    async def _deploy_skills(
+        self, vm_ip: str, ssh_port: int, skill_ids: list[str]
+    ) -> None:
+        """Copy selected skills from the shared library to the agent VM."""
+        from baal_core.templates.loader import get_skill_content
+
+        for skill_id in skill_ids:
+            content = get_skill_content(skill_id)
+            if not content:
+                logger.warning(f"Skill '{skill_id}' not found, skipping")
+                continue
+            # Create skill directory and write SKILL.md
+            skill_dir = f"/opt/baal-agent/workspace/skills/{skill_id}"
+            await self._ssh_run(vm_ip, ssh_port, f"mkdir -p {skill_dir}")
+            cmd = _safe_write_file_command(content, f"{skill_dir}/SKILL.md")
+            await self._ssh_run(vm_ip, ssh_port, cmd)
 
     async def _ssh_pipe_tar(
         self,

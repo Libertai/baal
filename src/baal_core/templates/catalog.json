@@ -1,0 +1,294 @@
+{
+  "categories": [
+    {
+      "id": "developer",
+      "name": "Developer",
+      "icon": "code",
+      "description": "Build, debug, and ship code faster"
+    },
+    {
+      "id": "productivity",
+      "name": "Productivity",
+      "icon": "sparkles",
+      "description": "Research, write, learn, and stay organized"
+    },
+    {
+      "id": "web3",
+      "name": "Web3",
+      "icon": "globe",
+      "description": "Navigate crypto, DeFi, and Aleph Cloud"
+    }
+  ],
+  "skills": [
+    {
+      "id": "git",
+      "name": "Git",
+      "category": "developer",
+      "description": "Clone repos, branch, commit, diff, PR workflows via bash+git"
+    },
+    {
+      "id": "code-review",
+      "name": "Code Review",
+      "category": "developer",
+      "description": "Systematic code review — bugs, security, style, improvements"
+    },
+    {
+      "id": "python-dev",
+      "name": "Python Dev",
+      "category": "developer",
+      "description": "Write, run, debug Python; venvs, pip, package management"
+    },
+    {
+      "id": "node-dev",
+      "name": "Node.js Dev",
+      "category": "developer",
+      "description": "Write, run Node/TypeScript; npm/pnpm workflows"
+    },
+    {
+      "id": "devops",
+      "name": "DevOps",
+      "category": "developer",
+      "description": "Dockerfiles, docker-compose, CI/CD yaml, nginx configs"
+    },
+    {
+      "id": "api-testing",
+      "name": "API Testing",
+      "category": "developer",
+      "description": "Test APIs with curl/httpie, format responses, chain requests"
+    },
+    {
+      "id": "data-analysis",
+      "name": "Data Analysis",
+      "category": "developer",
+      "description": "Process CSV/JSON with Python, generate summaries and insights"
+    },
+    {
+      "id": "sql",
+      "name": "SQL",
+      "category": "developer",
+      "description": "Write and execute SQL queries, schema design, data exploration"
+    },
+    {
+      "id": "web-research",
+      "name": "Web Research",
+      "category": "productivity",
+      "description": "Multi-source research, fact-checking, citation tracking"
+    },
+    {
+      "id": "writing",
+      "name": "Writing",
+      "category": "productivity",
+      "description": "Draft, edit, polish text; multiple tones and styles"
+    },
+    {
+      "id": "summarization",
+      "name": "Summarization",
+      "category": "productivity",
+      "description": "Summarize documents, articles, codebases; extractive and abstractive"
+    },
+    {
+      "id": "task-planning",
+      "name": "Task Planning",
+      "category": "productivity",
+      "description": "Break goals into actionable steps, track progress in files"
+    },
+    {
+      "id": "learning-tutor",
+      "name": "Learning Tutor",
+      "category": "productivity",
+      "description": "Socratic teaching, quiz generation, concept explanation"
+    },
+    {
+      "id": "memory-management",
+      "name": "Memory Management",
+      "category": "productivity",
+      "description": "Use the persistent memory system effectively"
+    },
+    {
+      "id": "weather",
+      "name": "Weather",
+      "category": "productivity",
+      "description": "Check current weather using wttr.in"
+    },
+    {
+      "id": "aleph-cloud",
+      "name": "Aleph Cloud",
+      "category": "web3",
+      "description": "Manage instances, check credits/usage, storage, network status via aleph CLI and APIs"
+    },
+    {
+      "id": "crypto-research",
+      "name": "Crypto Research",
+      "category": "web3",
+      "description": "Token data, protocol analysis, ecosystem news via web"
+    },
+    {
+      "id": "smart-contract-reading",
+      "name": "Smart Contract Reading",
+      "category": "web3",
+      "description": "Read and explain Solidity/Vyper contracts, identify patterns"
+    },
+    {
+      "id": "onchain-data",
+      "name": "On-Chain Data",
+      "category": "web3",
+      "description": "Query public blockchain data via APIs, format transactions/addresses"
+    }
+  ],
+  "templates": [
+    {
+      "id": "full-stack-dev",
+      "name": "Full-Stack Dev",
+      "category": "developer",
+      "description": "Your coding partner. Writes, reviews, and debugs code across the stack.",
+      "icon": "laptop-code",
+      "model": "qwen3-coder-next",
+      "skills": ["git", "python-dev", "node-dev", "code-review"],
+      "system_prompt_file": "full-stack-dev.md",
+      "featured": true
+    },
+    {
+      "id": "devops-engineer",
+      "name": "DevOps Engineer",
+      "category": "developer",
+      "description": "Builds Dockerfiles, CI pipelines, nginx configs. Keeps your infra running.",
+      "icon": "server",
+      "model": "qwen3-coder-next",
+      "skills": ["git", "devops", "api-testing"],
+      "system_prompt_file": "devops-engineer.md",
+      "featured": false
+    },
+    {
+      "id": "python-expert",
+      "name": "Python Expert",
+      "category": "developer",
+      "description": "Python specialist — scripts, data pipelines, debugging, package management.",
+      "icon": "code",
+      "model": "qwen3-coder-next",
+      "skills": ["git", "python-dev", "data-analysis"],
+      "system_prompt_file": "python-expert.md",
+      "featured": false
+    },
+    {
+      "id": "code-reviewer",
+      "name": "Code Reviewer",
+      "category": "developer",
+      "description": "Reviews your code for bugs, security issues, and style. Suggests improvements.",
+      "icon": "search",
+      "model": "qwen3-coder-next",
+      "skills": ["git", "code-review"],
+      "system_prompt_file": "code-reviewer.md",
+      "featured": false
+    },
+    {
+      "id": "data-analyst",
+      "name": "Data Analyst",
+      "category": "developer",
+      "description": "Crunches data, writes queries, generates reports. Turns messy data into insights.",
+      "icon": "bar-chart",
+      "model": "qwen3-coder-next",
+      "skills": ["python-dev", "data-analysis", "sql"],
+      "system_prompt_file": "data-analyst.md",
+      "featured": false
+    },
+    {
+      "id": "api-builder",
+      "name": "API Builder",
+      "category": "developer",
+      "description": "Designs and builds REST/GraphQL APIs. Tests endpoints, writes docs.",
+      "icon": "api",
+      "model": "qwen3-coder-next",
+      "skills": ["git", "python-dev", "node-dev", "api-testing"],
+      "system_prompt_file": "api-builder.md",
+      "featured": false
+    },
+    {
+      "id": "aleph-admin",
+      "name": "Aleph Cloud Admin",
+      "category": "developer",
+      "description": "Manages your Aleph Cloud infrastructure — instances, credits, deployments, storage.",
+      "icon": "cloud",
+      "model": "qwen3-coder-next",
+      "skills": ["aleph-cloud", "devops"],
+      "system_prompt_file": "aleph-admin.md",
+      "featured": false
+    },
+    {
+      "id": "research-assistant",
+      "name": "Research Assistant",
+      "category": "productivity",
+      "description": "Deep-dives into any topic. Gathers sources, synthesizes findings, cites everything.",
+      "icon": "book-open",
+      "model": "glm-4.7",
+      "skills": ["web-research", "summarization", "writing"],
+      "system_prompt_file": "research-assistant.md",
+      "featured": true
+    },
+    {
+      "id": "writing-coach",
+      "name": "Writing Coach",
+      "category": "productivity",
+      "description": "Helps you write, edit, and polish text. Blog posts, docs, emails — any style.",
+      "icon": "pencil",
+      "model": "glm-4.7",
+      "skills": ["writing", "web-research"],
+      "system_prompt_file": "writing-coach.md",
+      "featured": false
+    },
+    {
+      "id": "study-buddy",
+      "name": "Study Buddy",
+      "category": "productivity",
+      "description": "Explains concepts, quizzes you, creates study guides. Adapts to your level.",
+      "icon": "graduation-cap",
+      "model": "glm-4.7",
+      "skills": ["learning-tutor", "web-research", "summarization"],
+      "system_prompt_file": "study-buddy.md",
+      "featured": false
+    },
+    {
+      "id": "personal-assistant",
+      "name": "Personal Assistant",
+      "category": "productivity",
+      "description": "Keeps track of tasks, does research, remembers preferences. Your digital right hand.",
+      "icon": "user-check",
+      "model": "glm-4.7",
+      "skills": ["task-planning", "web-research", "weather", "memory-management"],
+      "system_prompt_file": "personal-assistant.md",
+      "featured": false
+    },
+    {
+      "id": "defi-researcher",
+      "name": "DeFi Researcher",
+      "category": "web3",
+      "description": "Analyzes DeFi protocols, tracks token metrics, researches yield strategies.",
+      "icon": "trending-up",
+      "model": "glm-4.7",
+      "skills": ["crypto-research", "onchain-data", "web-research"],
+      "system_prompt_file": "defi-researcher.md",
+      "featured": false
+    },
+    {
+      "id": "contract-auditor",
+      "name": "Smart Contract Auditor",
+      "category": "web3",
+      "description": "Reads and analyzes smart contracts. Spots vulnerabilities, explains logic.",
+      "icon": "shield",
+      "model": "qwen3-coder-next",
+      "skills": ["smart-contract-reading", "code-review"],
+      "system_prompt_file": "contract-auditor.md",
+      "featured": false
+    },
+    {
+      "id": "aleph-navigator",
+      "name": "Aleph Cloud Navigator",
+      "category": "web3",
+      "description": "Your guide to the Aleph ecosystem. Manages resources, tracks $ALEPH, explains concepts.",
+      "icon": "compass",
+      "model": "glm-4.7",
+      "skills": ["aleph-cloud", "crypto-research"],
+      "system_prompt_file": "aleph-navigator.md",
+      "featured": true
+    }
+  ]
+}

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import secrets
 import time
@@ -26,6 +27,7 @@ async def create_agent(
     system_prompt: str,
     model: str,
     encryption_key: str,
+    skills: list[str] | None = None,
 ) -> Agent:
     """Create a new agent record with an encrypted auth token."""
     if model not in AVAILABLE_MODELS:
@@ -42,6 +44,7 @@ async def create_agent(
         auth_token=encrypted_secret,
         deployment_status="pending",
         source="web",
+        skills=json.dumps(skills) if skills else None,
     )
     db.add(agent)
     await db.flush()
@@ -206,6 +209,9 @@ async def deploy_agent_background(
             # The deployer calls on_deploy_progress for sub-step updates
             add_log(agent_id, "info", "Starting agent deployment...")
 
+            # Parse skills from agent record
+            agent_skills = json.loads(agent.skills) if agent.skills else None
+
             deploy_result = await deployer.deploy_agent(
                 vm_ip=vm_ip,
                 ssh_port=ssh_port,
@@ -217,6 +223,7 @@ async def deploy_agent_background(
                 instance_hash=instance_hash,
                 owner_chat_id=str(agent.owner_id),
                 on_progress=on_deploy_progress,
+                skills=agent_skills,
             )
 
             if deploy_result.get("status") != "success":

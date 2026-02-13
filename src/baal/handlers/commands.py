@@ -21,11 +21,12 @@ from baal.database.db import Database
 from baal.services.deployer import AlephDeployer
 from baal.services.encryption import decrypt, encrypt
 from baal_core.models import AVAILABLE_MODELS
+from baal_core.templates.loader import list_skills
 
 logger = logging.getLogger(__name__)
 
 # ConversationHandler states for /create wizard
-NAME, PROMPT, MODEL, CONFIRM = range(4)
+NAME, PROMPT, MODEL, SKILLS, CONFIRM = range(5)
 
 # ConversationHandler states for /soul wizard
 SOUL_SELECT, SOUL_EDIT = range(10, 12)
@@ -950,7 +951,7 @@ async def create_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 async def create_model_callback(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> int:
-    """Handle model selection with enhanced confirmation preview."""
+    """Handle model selection and show skill selection UI."""
     query = update.callback_query
     await query.answer()
 
@@ -960,13 +961,67 @@ async def create_model_callback(
         return ConversationHandler.END
 
     context.user_data["create_model"] = model_id
+    context.user_data["create_skills"] = []
 
+    # Show skill selection UI
+    await _render_skills_keyboard(query, context)
+    return SKILLS
+
+
+def _build_skills_keyboard(
+    selected_skills: list[str],
+) -> InlineKeyboardMarkup:
+    """Build the inline keyboard for skill selection."""
+    all_skills = list_skills()
+    # Group by category
+    categories: dict[str, list[dict]] = {}
+    for s in all_skills:
+        categories.setdefault(s["category"], []).append(s)
+
+    buttons = []
+    for cat_name, cat_skills in categories.items():
+        buttons.append(
+            [InlineKeyboardButton(f"-- {cat_name.title()} --", callback_data="noop")]
+        )
+        for s in cat_skills:
+            check = "✅" if s["id"] in selected_skills else "⬜"
+            buttons.append(
+                [
+                    InlineKeyboardButton(
+                        f"{check} {s['name']}",
+                        callback_data=f"skill_toggle:{s['id']}",
+                    )
+                ]
+            )
+
+    buttons.append(
+        [
+            InlineKeyboardButton("Skip (no skills)", callback_data="skills_skip"),
+            InlineKeyboardButton("Done ✓", callback_data="skills_done"),
+        ]
+    )
+
+    return InlineKeyboardMarkup(buttons)
+
+
+async def _render_skills_keyboard(query, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Render (or re-render) the skills selection keyboard."""
+    selected = context.user_data.get("create_skills", [])
+    markup = _build_skills_keyboard(selected)
+    await query.edit_message_text(
+        "Select skills for your agent (tap to toggle):",
+        reply_markup=markup,
+    )
+
+
+async def _show_create_confirmation(query, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Show the final confirmation preview and return CONFIRM state."""
     name = context.user_data["create_name"]
-    prompt = context.user_data["create_prompt"]
+    model_id = context.user_data["create_model"]
+    selected_skills = context.user_data.get("create_skills", [])
     model_info = AVAILABLE_MODELS.get(model_id, {})
     model_name = model_info.get("name", model_id)
 
-    # Show full configuration preview
     keyboard = [
         [
             InlineKeyboardButton("✅ Confirm & Deploy", callback_data="create_confirm"),
@@ -974,17 +1029,24 @@ async def create_model_callback(
         ],
     ]
 
-    # Truncate prompt for display (show more than before)
-    prompt_display = prompt if len(prompt) <= 800 else prompt[:797] + "..."
-
     safe_name = html_mod.escape(name)
     safe_model = html_mod.escape(model_name)
-    safe_prompt = html_mod.escape(prompt_display)
+
+    # Build skills display
+    skills_line = ""
+    if selected_skills:
+        all_skills = list_skills()
+        skill_names = []
+        for s in all_skills:
+            if s["id"] in selected_skills:
+                skill_names.append(s["name"])
+        skills_line = f"<b>Skills:</b> {html_mod.escape(', '.join(skill_names))}\n"
 
     await query.edit_message_text(
         f"<b>Ready to Deploy</b>\n\n"
         f"<b>Name:</b> {safe_name}\n"
-        f"<b>Model:</b> {safe_model}\n\n"
+        f"<b>Model:</b> {safe_model}\n"
+        f"{skills_line}\n"
         f"Your agent will be deployed to Aleph Cloud.\n"
         f"Setup takes ~2-3 minutes.\n\n"
         f"<i>Tip: Use /soul to customize personality after creation.</i>",
@@ -992,6 +1054,42 @@ async def create_model_callback(
         reply_markup=InlineKeyboardMarkup(keyboard),
     )
     return CONFIRM
+
+
+async def create_skills_callback(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
+    """Handle skill selection toggles, skip, and done."""
+    query = update.callback_query
+    data = query.data
+
+    if data == "noop":
+        await query.answer()
+        return SKILLS
+
+    if data.startswith("skill_toggle:"):
+        await query.answer()
+        skill_id = data.removeprefix("skill_toggle:")
+        selected = context.user_data.get("create_skills", [])
+        if skill_id in selected:
+            selected.remove(skill_id)
+        else:
+            selected.append(skill_id)
+        context.user_data["create_skills"] = selected
+        await _render_skills_keyboard(query, context)
+        return SKILLS
+
+    if data == "skills_skip":
+        await query.answer()
+        context.user_data["create_skills"] = []
+        return await _show_create_confirmation(query, context)
+
+    if data == "skills_done":
+        await query.answer()
+        return await _show_create_confirmation(query, context)
+
+    await query.answer()
+    return SKILLS
 
 
 async def create_confirm_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -1024,6 +1122,7 @@ async def create_cancel_callback(update: Update, context: ContextTypes.DEFAULT_T
     context.user_data.pop("create_name", None)
     context.user_data.pop("create_prompt", None)
     context.user_data.pop("create_model", None)
+    context.user_data.pop("create_skills", None)
 
     await query.edit_message_text("Agent creation cancelled.")
     return ConversationHandler.END
@@ -1040,6 +1139,7 @@ async def create_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     name = context.user_data.pop("create_name")
     system_prompt = context.user_data.pop("create_prompt")
     model = context.user_data.pop("create_model")
+    skills = context.user_data.pop("create_skills", []) or None
 
     # Determine which LibertAI API key to use
     user = await db.get_user(user_id)
@@ -1084,6 +1184,7 @@ async def create_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 libertai_key,
                 agent_secret,
                 pooled_vm,
+                skills=skills,
             )
         )
     else:
@@ -1103,6 +1204,7 @@ async def create_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 model,
                 libertai_key,
                 agent_secret,
+                skills=skills,
             )
         )
 
@@ -1114,6 +1216,7 @@ async def create_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     context.user_data.pop("create_name", None)
     context.user_data.pop("create_prompt", None)
     context.user_data.pop("create_model", None)
+    context.user_data.pop("create_skills", None)
     await update.message.reply_text("Agent creation cancelled.")
     return ConversationHandler.END
 
@@ -1124,6 +1227,7 @@ async def create_exit_silently(update: Update, context: ContextTypes.DEFAULT_TYP
     context.user_data.pop("create_name", None)
     context.user_data.pop("create_prompt", None)
     context.user_data.pop("create_model", None)
+    context.user_data.pop("create_skills", None)
     # Exit without message since they're doing something else
     return ConversationHandler.END
 
@@ -1140,6 +1244,7 @@ async def _deploy_agent_fast(
     libertai_api_key: str,
     agent_secret: str,
     pooled_vm,
+    skills: list[str] | None = None,
 ) -> None:
     """Deploy agent to a pre-provisioned VM from the pool (~10-15 seconds)."""
     import time as _time
@@ -1173,6 +1278,7 @@ async def _deploy_agent_fast(
             agent_secret=agent_secret,
             instance_hash=pooled_vm.instance_hash,
             owner_chat_id=str(chat_id),
+            skills=skills,
         )
 
         if deploy_result["status"] != "success":
@@ -1282,6 +1388,7 @@ async def _deploy_agent_background(
     model: str,
     libertai_api_key: str,
     agent_secret: str,
+    skills: list[str] | None = None,
 ) -> None:
     """Run the full deployment flow in the background with live progress updates."""
     import time as _time
@@ -1379,6 +1486,7 @@ async def _deploy_agent_background(
             agent_secret=agent_secret,
             instance_hash=instance_hash,
             owner_chat_id=str(chat_id),
+            skills=skills,
         )
 
         if deploy_result["status"] != "success":
@@ -1580,6 +1688,7 @@ def build_create_conversation_handler() -> ConversationHandler:
             NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, create_name)],
             PROMPT: [MessageHandler(filters.TEXT & ~filters.COMMAND, create_prompt)],
             MODEL: [CallbackQueryHandler(create_model_callback, pattern=r"^create_model:")],
+            SKILLS: [CallbackQueryHandler(create_skills_callback)],
             CONFIRM: [
                 CallbackQueryHandler(create_confirm_callback, pattern=r"^create_confirm$"),
                 CallbackQueryHandler(create_cancel_callback, pattern=r"^create_cancel$"),

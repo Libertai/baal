@@ -143,6 +143,7 @@ class Agent(Base):
     crn_url: Mapped[str | None] = mapped_column(String(255), nullable=True)
     auth_token: Mapped[str | None] = mapped_column(Text, nullable=True)  # Fernet-encrypted
     source: Mapped[str] = mapped_column(String(20), default="web")  # "web", "telegram"
+    skills: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON list of skill IDs
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, onupdate=_utcnow

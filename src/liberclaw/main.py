@@ -13,7 +13,7 @@ from sqlalchemy import select, update
 from liberclaw.auth.dependencies import set_settings
 from liberclaw.config import LiberClawSettings
 from liberclaw.database.session import close_engine, get_session_factory, init_engine
-from liberclaw.routers import agents, auth, chat, files, health, network, usage, users
+from liberclaw.routers import agents, auth, chat, files, health, network, templates, usage, users
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -85,6 +85,8 @@ def create_app(settings: LiberClawSettings | None = None) -> FastAPI:
     app.include_router(health.router, prefix="/api/v1")
     app.include_router(auth.router, prefix="/api/v1")
     app.include_router(agents.router, prefix="/api/v1")
+    app.include_router(templates.router, prefix="/api/v1")
+    app.include_router(templates.skills_router, prefix="/api/v1")
     app.include_router(chat.router, prefix="/api/v1")
     app.include_router(files.router, prefix="/api/v1")
     app.include_router(users.router, prefix="/api/v1")

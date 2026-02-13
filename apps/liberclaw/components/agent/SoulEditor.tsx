@@ -4,7 +4,6 @@ import {
   Text,
   TextInput,
   Pressable,
-  ScrollView,
   Platform,
 } from "react-native";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
@@ -74,6 +73,8 @@ interface SoulEditorProps {
   showLineNumbers?: boolean;
   /** Minimum height for the editor area */
   minHeight?: number;
+  /** Hide built-in prompt template pills (default: false) */
+  hideTemplates?: boolean;
 }
 
 export default function SoulEditor({
@@ -82,6 +83,7 @@ export default function SoulEditor({
   maxLength = MAX_PROMPT_LENGTH,
   showLineNumbers = true,
   minHeight = 200,
+  hideTemplates = false,
 }: SoulEditorProps): React.JSX.Element {
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
   const lineNumbers = useMemo(() => generateLineNumbers(value), [value]);
@@ -94,40 +96,38 @@ export default function SoulEditor({
 
   return (
     <View>
-      {/* Template pills */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ gap: 8, paddingBottom: 12 }}
-      >
-        {PROMPT_TEMPLATES.map((template) => {
-          const isSelected = selectedTemplate === template.label;
-          return (
-            <Pressable
-              key={template.label}
-              onPress={() => handleTemplateSelect(template)}
-              className={`rounded-full px-4 py-2 flex-row items-center gap-2 ${
-                isSelected
-                  ? "bg-claw-orange/20 border border-claw-orange/40"
-                  : "bg-surface-overlay border border-surface-border"
-              }`}
-            >
-              <MaterialIcons
-                name={template.icon}
-                size={14}
-                color={isSelected ? "#ff5e00" : "#8a8494"}
-              />
-              <Text
-                className={`text-xs font-semibold ${
-                  isSelected ? "text-claw-orange" : "text-text-secondary"
+      {/* Template pills (hidden when parent provides its own) */}
+      {!hideTemplates && (
+        <View className="flex-row flex-wrap mb-3" style={{ gap: 8 }}>
+          {PROMPT_TEMPLATES.map((template) => {
+            const isSelected = selectedTemplate === template.label;
+            return (
+              <Pressable
+                key={template.label}
+                onPress={() => handleTemplateSelect(template)}
+                className={`rounded-full px-4 py-2 flex-row items-center gap-2 ${
+                  isSelected
+                    ? "bg-claw-orange/20 border border-claw-orange/40"
+                    : "bg-surface-overlay border border-surface-border"
                 }`}
               >
-                {template.label}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </ScrollView>
+                <MaterialIcons
+                  name={template.icon}
+                  size={14}
+                  color={isSelected ? "#ff5e00" : "#8a8494"}
+                />
+                <Text
+                  className={`text-xs font-semibold ${
+                    isSelected ? "text-claw-orange" : "text-text-secondary"
+                  }`}
+                >
+                  {template.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      )}
 
       {/* Editor area with line numbers */}
       <View

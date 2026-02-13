@@ -64,20 +64,67 @@ export interface Agent {
   deployment_status: DeploymentStatusValue;
   vm_url: string | null;
   source: string;
+  skills: string[] | null;
   created_at: string;
   updated_at: string;
 }
 
 export interface AgentCreate {
   name: string;
-  system_prompt: string;
+  system_prompt?: string;
   model?: string;
+  template_id?: string;
+  skills?: string[];
 }
 
 export interface AgentUpdate {
   name?: string;
   system_prompt?: string;
   model?: string;
+}
+
+// ── Templates & Skills ───────────────────────────────────────────────
+
+export interface SkillSummary {
+  id: string;
+  name: string;
+  category: string;
+  description: string;
+}
+
+export interface SkillDetail extends SkillSummary {
+  content: string;
+}
+
+export interface SkillListResponse {
+  skills: SkillSummary[];
+}
+
+export interface TemplateSummary {
+  id: string;
+  name: string;
+  category: string;
+  description: string;
+  icon: string;
+  model: string;
+  skills: string[];
+  featured: boolean;
+}
+
+export interface TemplateDetail extends TemplateSummary {
+  system_prompt: string;
+}
+
+export interface CategoryGroup {
+  id: string;
+  name: string;
+  icon: string;
+  description: string;
+  templates: TemplateSummary[];
+}
+
+export interface TemplateListResponse {
+  categories: CategoryGroup[];
 }
 
 export interface AgentListResponse {

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -9,8 +9,9 @@ import {
   Platform,
 } from "react-native";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
-import { useRouter, Stack } from "expo-router";
+import { useRouter, useLocalSearchParams, Stack } from "expo-router";
 import { useCreateAgent } from "@/lib/hooks/useAgents";
+import { useTemplate, useSkills, useTemplates } from "@/lib/hooks/useTemplates";
 import ModelSelector from "@/components/agent/ModelSelector";
 import SoulEditor from "@/components/agent/SoulEditor";
 
@@ -18,7 +19,8 @@ const isWeb = Platform.OS === "web";
 
 const STEPS = [
   { key: "identity", label: "Identity" },
-  { key: "capabilities", label: "Capabilities" },
+  { key: "soul", label: "Soul" },
+  { key: "skills", label: "Skills" },
   { key: "model", label: "Model" },
   { key: "review", label: "Review" },
 ];
@@ -180,26 +182,76 @@ function ExecutionParams(): React.JSX.Element {
 
 export default function CreateAgentScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ template_id?: string }>();
   const createAgent = useCreateAgent();
+  const { data: templateData } = useTemplate(params.template_id);
+  const { data: skillsData } = useSkills();
+  const { data: templatesData } = useTemplates();
 
   const [step, setStep] = useState(1);
   const [name, setName] = useState("");
   const [systemPrompt, setSystemPrompt] = useState(DEFAULT_PROMPT);
   const [model, setModel] = useState("qwen3-coder-next");
+  const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // All templates flattened from categories
+  const allTemplates = (templatesData?.categories ?? []).flatMap(c => c.templates);
+
+  // Pre-fill from URL template_id param (e.g. coming from gallery)
+  useEffect(() => {
+    if (templateData) {
+      setSystemPrompt(templateData.system_prompt);
+      setModel(templateData.model);
+      setSelectedSkills(templateData.skills);
+      setSelectedTemplateId(templateData.id);
+    }
+  }, [templateData]);
+
+  function selectTemplate(tmplId: string) {
+    const tmpl = allTemplates.find(t => t.id === tmplId);
+    if (!tmpl) return;
+    // If tapping same template again, deselect it
+    if (selectedTemplateId === tmplId) {
+      setSelectedTemplateId(null);
+      setSystemPrompt(DEFAULT_PROMPT);
+      setModel("qwen3-coder-next");
+      setSelectedSkills([]);
+      return;
+    }
+    setSelectedTemplateId(tmplId);
+    setModel(tmpl.model);
+    setSelectedSkills([...tmpl.skills]);
+    // Load the full system prompt asynchronously
+    import("@/lib/api/templates").then(({ getTemplate }) =>
+      getTemplate(tmplId).then(detail => {
+        if (detail?.system_prompt) setSystemPrompt(detail.system_prompt);
+      })
+    );
+  }
+
+  function toggleSkill(skillId: string) {
+    setSelectedSkills(prev =>
+      prev.includes(skillId)
+        ? prev.filter(s => s !== skillId)
+        : [...prev, skillId]
+    );
+  }
 
   function canProceed(): boolean {
     switch (step) {
       case 1: return name.trim().length > 0;
       case 2: return systemPrompt.trim().length > 0;
-      case 3: return true;
+      case 3: return true; // skills are optional
       case 4: return true;
+      case 5: return true;
       default: return false;
     }
   }
 
   function handleNext(): void {
-    if (step < 4) setStep(step + 1);
+    if (step < 5) setStep(step + 1);
   }
 
   function handleBack(): void {
@@ -214,6 +266,8 @@ export default function CreateAgentScreen() {
         name: name.trim(),
         system_prompt: systemPrompt.trim(),
         model,
+        skills: selectedSkills.length > 0 ? selectedSkills : undefined,
+        template_id: params.template_id ?? undefined,
       });
       router.replace(`/agent/${agent.id}`);
     } catch (err: unknown) {
@@ -386,7 +440,7 @@ export default function CreateAgentScreen() {
                 </View>
               )}
 
-              {/* Step 2: Agent Soul — prompt with templates */}
+              {/* Step 2: Agent Soul — prompt */}
               {step === 2 && (
                 <View>
                   <View className="flex-row items-center justify-between mb-2">
@@ -396,23 +450,115 @@ export default function CreateAgentScreen() {
                         Agent Soul
                       </Text>
                     </View>
-                    <View className="bg-surface-overlay border border-surface-border rounded-full px-2 py-0.5">
-                      <Text className="font-mono text-[10px] text-text-secondary">v2.4</Text>
-                    </View>
+                    {selectedTemplateId && (
+                      <View className="bg-claw-orange/20 border border-claw-orange/40 rounded-full px-2 py-0.5">
+                        <Text className="font-mono text-[10px] text-claw-orange">
+                          {allTemplates.find(t => t.id === selectedTemplateId)?.name ?? selectedTemplateId}
+                        </Text>
+                      </View>
+                    )}
                   </View>
                   <Text className="text-sm text-text-secondary mb-4">
-                    Pick a template or define your agent's personality and behavior.
+                    Pick a template to pre-fill prompt, model, and skills — or write your own.
                   </Text>
+
+                  {/* Gallery template pills */}
+                  {allTemplates.length > 0 && (
+                    <View className="flex-row flex-wrap mb-4" style={{ gap: 8 }}>
+                      {allTemplates.map(tmpl => {
+                        const isSelected = selectedTemplateId === tmpl.id;
+                        return (
+                          <Pressable
+                            key={tmpl.id}
+                            onPress={() => selectTemplate(tmpl.id)}
+                            className={`rounded-full px-3 py-1.5 flex-row items-center gap-1.5 ${
+                              isSelected
+                                ? "bg-claw-orange/20 border border-claw-orange/40"
+                                : "bg-surface-overlay border border-surface-border"
+                            }`}
+                          >
+                            <Text
+                              className={`text-xs font-semibold ${
+                                isSelected ? "text-claw-orange" : "text-text-secondary"
+                              }`}
+                            >
+                              {tmpl.name}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                  )}
+
                   <SoulEditor
                     value={systemPrompt}
                     onChangeText={setSystemPrompt}
                     minHeight={isWeb ? 240 : 180}
+                    hideTemplates
                   />
                 </View>
               )}
 
-              {/* Step 3: Model Selection + Execution Params */}
+              {/* Step 3: Skills */}
               {step === 3 && (
+                <View>
+                  <View className="flex-row items-center gap-2 mb-2">
+                    <MaterialIcons name="extension" size={20} color="#ff5e00" />
+                    <Text className="text-xl font-bold text-text-primary">
+                      Skills
+                    </Text>
+                    {selectedSkills.length > 0 && (
+                      <View className="bg-claw-orange/20 rounded-full px-2 py-0.5">
+                        <Text className="text-claw-orange text-xs font-bold">{selectedSkills.length}</Text>
+                      </View>
+                    )}
+                  </View>
+                  <Text className="text-sm text-text-secondary mb-6">
+                    Choose what your agent can do. Skills teach it specific workflows and capabilities.
+                  </Text>
+                  {["developer", "productivity", "web3"].map(category => {
+                    const catSkills = (skillsData?.skills ?? []).filter(s => s.category === category);
+                    if (catSkills.length === 0) return null;
+                    return (
+                      <View key={category} className="mb-5">
+                        <Text className="text-text-tertiary text-xs font-bold uppercase tracking-wider mb-2">
+                          {category}
+                        </Text>
+                        {catSkills.map(skill => {
+                          const checked = selectedSkills.includes(skill.id);
+                          return (
+                            <Pressable
+                              key={skill.id}
+                              onPress={() => toggleSkill(skill.id)}
+                              className="flex-row items-center py-3 px-3 rounded-xl mb-1"
+                              style={{ backgroundColor: checked ? "rgba(255,94,0,0.1)" : "transparent" }}
+                            >
+                              <View
+                                className="w-5 h-5 rounded items-center justify-center mr-3"
+                                style={{ backgroundColor: checked ? "#ff5e00" : "#1a1520", borderWidth: checked ? 0 : 1, borderColor: "#2a2235" }}
+                              >
+                                {checked && <MaterialIcons name="check" size={14} color="white" />}
+                              </View>
+                              <View className="flex-1">
+                                <Text className="text-white text-sm font-medium">{skill.name}</Text>
+                                <Text className="text-text-tertiary text-xs">{skill.description}</Text>
+                              </View>
+                            </Pressable>
+                          );
+                        })}
+                      </View>
+                    );
+                  })}
+                  {selectedSkills.length === 0 && (
+                    <Text className="text-text-tertiary text-xs font-mono mt-2">
+                      No skills selected — your agent will use default capabilities.
+                    </Text>
+                  )}
+                </View>
+              )}
+
+              {/* Step 4: Model Selection + Execution Params */}
+              {step === 4 && (
                 <View>
                   <View className="flex-row items-center justify-between mb-6">
                     <View className="flex-row items-center gap-2">
@@ -436,8 +582,8 @@ export default function CreateAgentScreen() {
                 </View>
               )}
 
-              {/* Step 4: Review */}
-              {step === 4 && (
+              {/* Step 5: Review */}
+              {step === 5 && (
                 <View>
                   <View className="flex-row items-center gap-2 mb-6">
                     <MaterialIcons name="rocket-launch" size={20} color="#ff5e00" />
@@ -478,6 +624,21 @@ export default function CreateAgentScreen() {
                       {systemPrompt}
                     </Text>
                   </View>
+
+                  {selectedSkills.length > 0 && (
+                    <View className="bg-surface-base border border-surface-border rounded-xl p-4 mb-3">
+                      <Text className="font-mono text-[10px] uppercase tracking-wider text-text-tertiary mb-2">
+                        Skills ({selectedSkills.length})
+                      </Text>
+                      <View className="flex-row flex-wrap" style={{ gap: 6 }}>
+                        {selectedSkills.map(s => (
+                          <View key={s} className="bg-surface-raised px-3 py-1 rounded-full">
+                            <Text className="text-white text-xs">{s}</Text>
+                          </View>
+                        ))}
+                      </View>
+                    </View>
+                  )}
                 </View>
               )}
             </View>
@@ -494,7 +655,7 @@ export default function CreateAgentScreen() {
                 </Text>
               </Pressable>
 
-              {step < 4 ? (
+              {step < 5 ? (
                 <Pressable
                   className={[
                     "flex-row items-center justify-center gap-2 rounded-xl py-3.5 px-8",
@@ -516,7 +677,7 @@ export default function CreateAgentScreen() {
                       canProceed() ? "text-white" : "text-text-tertiary",
                     ].join(" ")}
                   >
-                    {step === 3 ? "Review & Deploy" : "Next"}
+                    {step === 4 ? "Review & Deploy" : "Next"}
                   </Text>
                   <MaterialIcons
                     name="arrow-forward"

@@ -68,9 +68,48 @@ async def create_user_agent(
             detail=f"Agent limit reached ({agent_limit})",
         )
 
+    # Resolve template defaults
+    system_prompt = body.system_prompt
+    model = body.model
+    skills = body.skills
+
+    if body.template_id:
+        from baal_core.templates.loader import get_template, validate_skills
+        template = get_template(body.template_id)
+        if not template:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Unknown template: {body.template_id}",
+            )
+        if system_prompt is None:
+            system_prompt = template["system_prompt"]
+        if model is None:
+            model = template["model"]
+        if skills is None:
+            skills = template["skills"]
+
+    # Final defaults
+    if system_prompt is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="system_prompt is required when not using a template",
+        )
+    if model is None:
+        model = "qwen3-coder-next"
+
+    # Validate skills
+    if skills:
+        from baal_core.templates.loader import validate_skills
+        invalid = validate_skills(skills)
+        if invalid:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Unknown skills: {', '.join(invalid)}",
+            )
+
     agent = await create_agent(
-        db, user.id, body.name, body.system_prompt, body.model,
-        settings.encryption_key,
+        db, user.id, body.name, system_prompt, model,
+        settings.encryption_key, skills=skills,
     )
     await db.commit()
 

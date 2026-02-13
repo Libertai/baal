@@ -5,13 +5,15 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class AgentCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
-    system_prompt: str = Field(..., min_length=1)
-    model: str = "qwen3-coder-next"
+    system_prompt: str | None = Field(None, min_length=1)
+    model: str | None = None
+    template_id: str | None = None
+    skills: list[str] | None = None
 
 
 class AgentUpdate(BaseModel):
@@ -28,8 +30,18 @@ class AgentResponse(BaseModel):
     deployment_status: str
     vm_url: str | None
     source: str
+    skills: list[str] | None = None
     created_at: datetime
     updated_at: datetime
+
+    @field_validator("skills", mode="before")
+    @classmethod
+    def parse_skills(cls, v):
+        if isinstance(v, str):
+            import json
+
+            return json.loads(v)
+        return v
 
     model_config = {"from_attributes": True}
 
