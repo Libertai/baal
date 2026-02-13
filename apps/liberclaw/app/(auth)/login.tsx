@@ -17,9 +17,11 @@ import {
   guestLogin,
   mobileGoogleLogin,
   mobileAppleLogin,
+  requestMagicLink,
+  getGoogleOAuthUrl,
+  getGitHubOAuthUrl,
 } from "@/lib/api/auth";
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:8000";
 const isWeb = Platform.OS === "web";
 const isIOS = Platform.OS === "ios";
 const isAndroid = Platform.OS === "android";
@@ -36,15 +38,7 @@ export default function LoginScreen(): React.JSX.Element {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${API_URL}/api/v1/auth/login/email`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: email.trim() }),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => null);
-        throw new Error(data?.detail ?? "Failed to send magic link");
-      }
+      await requestMagicLink(email.trim());
       router.push({
         pathname: "/(auth)/magic-link",
         params: { email: email.trim() },
@@ -58,9 +52,8 @@ export default function LoginScreen(): React.JSX.Element {
 
   async function handleOAuth(provider: "google" | "github"): Promise<void> {
     try {
-      await WebBrowser.openBrowserAsync(
-        `${API_URL}/api/v1/auth/oauth/${provider}`,
-      );
+      const url = provider === "google" ? getGoogleOAuthUrl() : getGitHubOAuthUrl();
+      await WebBrowser.openBrowserAsync(url);
     } catch {
       setError(`Failed to open ${provider} sign-in`);
     }

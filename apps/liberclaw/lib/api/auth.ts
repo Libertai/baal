@@ -100,7 +100,6 @@ export async function verifyMagicLinkCode(
   return apiFetch<TokenPair>("/auth/verify-magic-link", {
     method: "POST",
     body: JSON.stringify({ email, code }),
-    noAuth: true,
   });
 }
 
@@ -111,7 +110,6 @@ export async function mobileGoogleLogin(idToken: string): Promise<TokenPair> {
   return apiFetch<TokenPair>("/auth/mobile/google", {
     method: "POST",
     body: JSON.stringify({ id_token: idToken }),
-    noAuth: true,
   });
 }
 
@@ -125,6 +123,5 @@ export async function mobileAppleLogin(
   return apiFetch<TokenPair>("/auth/mobile/apple", {
     method: "POST",
     body: JSON.stringify({ identity_token: identityToken, full_name: fullName }),
-    noAuth: true,
   });
 }

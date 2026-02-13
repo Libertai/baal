@@ -33,16 +33,14 @@ export default function RootLayout() {
   });
 
   useEffect(() => {
-    if (Platform.OS !== "web") {
+    if (Platform.OS === "android") {
       import("@react-native-google-signin/google-signin")
         .then(({ GoogleOneTapSignIn }) => {
           GoogleOneTapSignIn.configure({
             webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID ?? "",
           });
         })
-        .catch(() => {
-          // Google Sign-In not available (e.g., iOS without Google services)
-        });
+        .catch(() => {});
     }
   }, []);
 

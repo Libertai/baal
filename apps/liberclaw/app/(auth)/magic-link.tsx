@@ -8,10 +8,8 @@ import {
 } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { useAuth } from "@/lib/auth/provider";
-import { verifyMagicLink, verifyMagicLinkCode } from "@/lib/api/auth";
+import { requestMagicLink, verifyMagicLink, verifyMagicLinkCode } from "@/lib/api/auth";
 import type { TokenPair } from "@/lib/api/types";
-
-const API_URL = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:8000";
 
 export default function MagicLinkScreen() {
   const router = useRouter();
@@ -47,14 +45,7 @@ export default function MagicLinkScreen() {
     setResending(true);
     setError(null);
     try {
-      const res = await fetch(`${API_URL}/api/v1/auth/login/email`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
-      });
-      if (!res.ok) {
-        throw new Error("Failed to resend");
-      }
+      await requestMagicLink(email);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to resend");
     } finally {
