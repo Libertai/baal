@@ -223,7 +223,7 @@ async def repair_agent(
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
 
-    if agent.deployment_status not in ("failed", "pending", "running"):
+    if agent.deployment_status not in ("failed", "pending", "running", "deploying"):
         raise HTTPException(status_code=400, detail="Agent is not in a repairable state")
 
     agent.deployment_status = "pending"

@@ -8,9 +8,11 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from sqlalchemy import select, update
+
 from liberclaw.auth.dependencies import set_settings
 from liberclaw.config import LiberClawSettings
-from liberclaw.database.session import close_engine, init_engine
+from liberclaw.database.session import close_engine, get_session_factory, init_engine
 from liberclaw.routers import agents, auth, chat, files, health, network, usage, users
 
 logging.basicConfig(
@@ -31,6 +33,24 @@ async def lifespan(app: FastAPI):
 
     # Store settings for auth dependencies
     set_settings(settings)
+
+    # Reset agents stuck in "deploying" (killed mid-deploy by process restart)
+    from liberclaw.database.models import Agent
+
+    async with get_session_factory()() as db:
+        result = await db.execute(
+            select(Agent.id, Agent.name).where(Agent.deployment_status == "deploying")
+        )
+        stuck = result.all()
+        if stuck:
+            await db.execute(
+                update(Agent)
+                .where(Agent.deployment_status == "deploying")
+                .values(deployment_status="failed")
+            )
+            await db.commit()
+            for agent_id, name in stuck:
+                logger.warning(f"Reset stuck agent '{name}' ({agent_id}) from deploying → failed")
 
     yield
 
