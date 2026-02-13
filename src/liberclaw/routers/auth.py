@@ -294,10 +294,10 @@ async def oauth_google_callback(
         settings.google_client_id, settings.google_client_secret, redirect_uri
     )
 
-    token = await client.fetch_token(
+    await client.fetch_token(
         url="https://oauth2.googleapis.com/token", code=code
     )
-    user_info = await get_google_user_info(client, token)
+    user_info = await get_google_user_info(client)
     user = await _link_oauth(db, user_info)
 
     device_info = request.headers.get("user-agent", "")[:500]
@@ -342,12 +342,12 @@ async def oauth_github_callback(
         settings.github_client_id, settings.github_client_secret, redirect_uri
     )
 
-    token = await client.fetch_token(
+    await client.fetch_token(
         url="https://github.com/login/oauth/access_token",
         code=code,
         headers={"Accept": "application/json"},
     )
-    user_info = await get_github_user_info(client, token)
+    user_info = await get_github_user_info(client)
     user = await _link_oauth(db, user_info)
 
     device_info = request.headers.get("user-agent", "")[:500]

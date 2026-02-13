@@ -29,11 +29,10 @@ def create_github_client(client_id: str, client_secret: str, redirect_uri: str) 
     )
 
 
-async def get_google_user_info(client: AsyncOAuth2Client, token: dict) -> dict:
+async def get_google_user_info(client: AsyncOAuth2Client) -> dict:
     """Fetch user info from Google using the access token."""
     resp = await client.get(
         "https://www.googleapis.com/oauth2/v3/userinfo",
-        token=token,
     )
     resp.raise_for_status()
     data = resp.json()
@@ -47,11 +46,10 @@ async def get_google_user_info(client: AsyncOAuth2Client, token: dict) -> dict:
     }
 
 
-async def get_github_user_info(client: AsyncOAuth2Client, token: dict) -> dict:
+async def get_github_user_info(client: AsyncOAuth2Client) -> dict:
     """Fetch user info from GitHub using the access token."""
     resp = await client.get(
         "https://api.github.com/user",
-        token=token,
         headers={"Accept": "application/json"},
     )
     resp.raise_for_status()
@@ -62,7 +60,6 @@ async def get_github_user_info(client: AsyncOAuth2Client, token: dict) -> dict:
     if not email:
         email_resp = await client.get(
             "https://api.github.com/user/emails",
-            token=token,
             headers={"Accept": "application/json"},
         )
         if email_resp.status_code == 200:
