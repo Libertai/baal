@@ -29,6 +29,7 @@ from liberclaw.services.agent_manager import (
     deploy_agent_background,
     get_agent,
     list_agents,
+    redeploy_agent_background,
     update_agent,
 )
 from liberclaw.services.usage_tracker import get_agent_count
@@ -304,7 +305,7 @@ async def redeploy_agent(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Push latest code to a running agent's VM."""
+    """Push latest code/config/skills to a running agent's VM (in-place update)."""
     agent = await get_agent(db, agent_id, user.id)
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
@@ -324,7 +325,7 @@ async def redeploy_agent(
         ssh_privkey_path=settings.aleph_ssh_privkey_path,
     )
     background_tasks.add_task(
-        deploy_agent_background,
+        redeploy_agent_background,
         agent_id=agent.id,
         deployer=deployer,
         libertai_api_key=settings.libertai_api_key,

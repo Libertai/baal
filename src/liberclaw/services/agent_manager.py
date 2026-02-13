@@ -300,3 +300,171 @@ async def deploy_agent_background(
             # (the frontend will stop polling once it sees "running" or "failed")
             await asyncio.sleep(10)
             clear_progress(agent_id)
+
+
+async def redeploy_agent_background(
+    agent_id: uuid.UUID,
+    deployer: AlephDeployer,
+    libertai_api_key: str,
+    encryption_key: str,
+    db_factory,
+) -> None:
+    """Background task: push updated code/env/skills to an existing VM.
+
+    Unlike deploy_agent_background(), this does NOT create a new instance.
+    It SSHes into the running VM and updates in place.
+    """
+    from baal_core.encryption import decrypt
+    from baal_core.proxy import health_check
+
+    from liberclaw.services.deployment_progress import (
+        add_log,
+        clear_progress,
+        init_progress,
+        set_step,
+    )
+
+    deploy_start = time.monotonic()
+    init_progress(agent_id)
+
+    async with db_factory() as db:
+        result = await db.execute(select(Agent).where(Agent.id == agent_id))
+        agent = result.scalar_one_or_none()
+        if not agent:
+            logger.error(f"Agent {agent_id} not found for redeploy")
+            clear_progress(agent_id)
+            return
+
+        if not agent.vm_url or not agent.instance_hash or not agent.crn_url:
+            logger.error(f"Agent {agent_id} has no existing VM to redeploy to")
+            add_log(agent_id, "error", "No existing VM — use Repair instead")
+            agent.deployment_status = "failed"
+            await db.commit()
+            clear_progress(agent_id)
+            return
+
+        agent.deployment_status = "deploying"
+        await db.commit()
+
+        try:
+            agent_secret = decrypt(agent.auth_token, encryption_key)
+            agent_skills = json.loads(agent.skills) if agent.skills else None
+            fqdn = agent.vm_url.replace("https://", "").replace("http://", "")
+
+            # ── Step 1: Find existing VM ─────────────────────────────────
+            set_step(agent_id, "allocation", "active",
+                     "Locating existing VM...")
+            add_log(agent_id, "info", "Looking up VM allocation...")
+
+            alloc = await deployer.wait_for_allocation(
+                agent.instance_hash, agent.crn_url, retries=3, delay=5,
+            )
+            if not alloc:
+                set_step(agent_id, "allocation", "failed",
+                         "Could not reach existing VM")
+                add_log(agent_id, "error",
+                        "VM not reachable — it may have been destroyed. Use Repair instead.")
+                agent.deployment_status = "failed"
+                db.add(DeploymentHistory(
+                    agent_id=agent_id, status="failed",
+                    step="allocation",
+                    error_message="Existing VM not reachable",
+                ))
+                await db.commit()
+                return
+
+            vm_ip = alloc["vm_ipv4"]
+            ssh_port = alloc.get("ssh_port", 22)
+            set_step(agent_id, "allocation", "done",
+                     f"VM found at {vm_ip}:{ssh_port}")
+            add_log(agent_id, "success", f"VM located: {vm_ip}:{ssh_port}")
+
+            # ── Step 2: Push code + env + skills ─────────────────────────
+            set_step(agent_id, "environment", "active",
+                     "Pushing updated code and configuration...")
+            add_log(agent_id, "info", "Deploying code update...")
+
+            deploy_result = await deployer.deploy_agent_code(
+                vm_ip=vm_ip,
+                ssh_port=ssh_port,
+                fqdn=fqdn,
+                agent_name=agent.name,
+                system_prompt=agent.system_prompt,
+                model=agent.model,
+                libertai_api_key=libertai_api_key,
+                agent_secret=agent_secret,
+                owner_chat_id=str(agent.owner_id),
+                skills=agent_skills,
+            )
+
+            if deploy_result.get("status") != "success":
+                error = deploy_result.get("error", "Unknown error")
+                set_step(agent_id, "environment", "failed", error)
+                add_log(agent_id, "error", f"Redeploy failed: {error}")
+                agent.deployment_status = "failed"
+                duration = int(time.monotonic() - deploy_start)
+                db.add(DeploymentHistory(
+                    agent_id=agent_id, status="failed",
+                    step="redeploy_code", error_message=error,
+                    duration_seconds=duration,
+                ))
+                await db.commit()
+                return
+
+            set_step(agent_id, "environment", "done", "Code updated")
+            add_log(agent_id, "success", "Code and configuration pushed")
+
+            # ── Step 3: Health Check ─────────────────────────────────────
+            set_step(agent_id, "health", "active",
+                     "Verifying agent is responding...")
+            add_log(agent_id, "info", f"Checking health at {agent.vm_url}/health...")
+
+            healthy = False
+            for attempt in range(6):  # 6 × 5s = 30s (faster — VM is already up)
+                await asyncio.sleep(5)
+                healthy = await health_check(agent.vm_url)
+                if healthy:
+                    break
+                if attempt < 5:
+                    add_log(agent_id, "info",
+                            f"Waiting for restart ({(attempt + 1) * 5}s)...")
+
+            duration = int(time.monotonic() - deploy_start)
+
+            if healthy:
+                set_step(agent_id, "health", "done",
+                         f"Agent responding on {agent.vm_url}")
+                add_log(agent_id, "success",
+                        f"Redeploy complete in {duration}s.")
+                agent.deployment_status = "running"
+                db.add(DeploymentHistory(
+                    agent_id=agent_id, status="success",
+                    step="redeploy_complete", duration_seconds=duration,
+                ))
+            else:
+                set_step(agent_id, "health", "failed",
+                         "Agent not responding after redeploy")
+                add_log(agent_id, "error",
+                        "Health check failed after redeploy. Use Repair to retry.")
+                agent.deployment_status = "failed"
+                db.add(DeploymentHistory(
+                    agent_id=agent_id, status="failed",
+                    step="health_check",
+                    error_message="Agent not responding after redeploy",
+                    duration_seconds=duration,
+                ))
+
+            await db.commit()
+
+        except Exception as e:
+            logger.error(f"Redeploy failed for agent {agent_id}: {e}", exc_info=True)
+            add_log(agent_id, "error", f"Unexpected error: {e}")
+            agent.deployment_status = "failed"
+            db.add(DeploymentHistory(
+                agent_id=agent_id, status="failed",
+                step="unexpected_error", error_message=str(e),
+            ))
+            await db.commit()
+        finally:
+            await asyncio.sleep(10)
+            clear_progress(agent_id)
