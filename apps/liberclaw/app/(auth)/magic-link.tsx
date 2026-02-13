@@ -8,6 +8,7 @@ import {
 } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { useAuth } from "@/lib/auth/provider";
+import { verifyMagicLink, verifyMagicLinkCode } from "@/lib/api/auth";
 import type { TokenPair } from "@/lib/api/types";
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -26,17 +27,13 @@ export default function MagicLinkScreen() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${API_URL}/api/v1/auth/verify-magic-link`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token: token.trim() }),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => null);
-        throw new Error(data?.detail ?? "Verification failed");
+      let data: TokenPair;
+      if (/^\d{6}$/.test(token.trim()) && email) {
+        data = await verifyMagicLinkCode(email, token.trim());
+      } else {
+        data = await verifyMagicLink(token.trim());
       }
-      const data = await res.json();
-      await login(data as TokenPair);
+      await login(data);
       router.replace("/(tabs)");
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Something went wrong");
@@ -72,8 +69,8 @@ export default function MagicLinkScreen() {
       </Text>
       <Text className="text-base text-center text-text-secondary mb-8">
         {email
-          ? `We sent a magic link to ${email}`
-          : "We sent you a magic link"}
+          ? `We sent a code to ${email}`
+          : "We sent you a code"}
       </Text>
 
       {error && (
@@ -85,12 +82,14 @@ export default function MagicLinkScreen() {
       )}
 
       <Text className="text-sm text-text-secondary mb-2">
-        Or enter the code from your email:
+        Enter the 6-digit code from your email:
       </Text>
       <TextInput
-        className="border border-surface-border rounded-lg px-4 py-3 mb-4 text-base text-center tracking-widest text-text-primary bg-surface-raised"
-        placeholder="Enter code"
+        className="border border-surface-border rounded-lg px-4 py-3 mb-4 text-2xl tracking-[12px] font-mono text-center text-text-primary bg-surface-raised"
+        placeholder="000000"
         placeholderTextColor="#5a5464"
+        keyboardType="number-pad"
+        maxLength={6}
         autoCapitalize="none"
         autoCorrect={false}
         value={token}
@@ -115,7 +114,7 @@ export default function MagicLinkScreen() {
         disabled={resending || !email}
       >
         <Text className="text-claw-orange text-sm">
-          {resending ? "Resending..." : "Resend magic link"}
+          {resending ? "Resending..." : "Resend code"}
         </Text>
       </TouchableOpacity>
 

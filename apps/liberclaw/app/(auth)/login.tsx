@@ -13,9 +13,16 @@ import ClawLogo from "@/components/ui/ClawLogo";
 import * as WebBrowser from "expo-web-browser";
 
 import { useAuth } from "@/lib/auth/provider";
+import {
+  guestLogin,
+  mobileGoogleLogin,
+  mobileAppleLogin,
+} from "@/lib/api/auth";
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:8000";
 const isWeb = Platform.OS === "web";
+const isIOS = Platform.OS === "ios";
+const isAndroid = Platform.OS === "android";
 
 export default function LoginScreen(): React.JSX.Element {
   const router = useRouter();
@@ -59,10 +66,82 @@ export default function LoginScreen(): React.JSX.Element {
     }
   }
 
-  return (
-    <View className="w-full max-w-sm">
-      <View className={isWeb ? "glass-card rounded-3xl p-8" : ""}>
-        {/* Logo icon (web only) */}
+  async function handleGoogleSignIn(): Promise<void> {
+    try {
+      setLoading(true);
+      setError(null);
+      const { GoogleOneTapSignIn } = await import(
+        "@react-native-google-signin/google-signin"
+      );
+      const response = await GoogleOneTapSignIn.signIn();
+      if (response.type === "success" && response.data.idToken) {
+        const tokens = await mobileGoogleLogin(response.data.idToken);
+        await login(tokens);
+        router.replace("/(tabs)");
+      }
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Google sign-in failed");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleAppleSignIn(): Promise<void> {
+    try {
+      setLoading(true);
+      setError(null);
+      const AppleAuth = await import("expo-apple-authentication");
+      const credential = await AppleAuth.signInAsync({
+        requestedScopes: [
+          AppleAuth.AppleAuthenticationScope.FULL_NAME,
+          AppleAuth.AppleAuthenticationScope.EMAIL,
+        ],
+      });
+      if (credential.identityToken) {
+        const fullName = credential.fullName
+          ? `${credential.fullName.givenName ?? ""} ${credential.fullName.familyName ?? ""}`.trim()
+          : undefined;
+        const tokens = await mobileAppleLogin(
+          credential.identityToken,
+          fullName || undefined,
+        );
+        await login(tokens);
+        router.replace("/(tabs)");
+      }
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Apple sign-in failed");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleGuestLogin(): Promise<void> {
+    try {
+      setLoading(true);
+      setError(null);
+      const Application = await import("expo-application");
+      let deviceId: string;
+      if (isAndroid) {
+        deviceId = Application.androidId ?? `android-${Date.now()}`;
+      } else {
+        deviceId =
+          (await Application.getIosIdForVendorsAsync()) ?? `ios-${Date.now()}`;
+      }
+      const tokens = await guestLogin(deviceId);
+      await login(tokens);
+      router.replace("/(tabs)");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Guest login failed");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // ── Shared UI fragments ────────────────────────────────────────────
+
+  function renderLogo(): React.JSX.Element {
+    return (
+      <>
         {isWeb && (
           <View className="items-center mb-4">
             <View
@@ -81,7 +160,6 @@ export default function LoginScreen(): React.JSX.Element {
           </View>
         )}
 
-        {/* Title */}
         <Text
           className={`text-3xl font-bold text-center mb-1 text-text-primary ${isWeb ? "glow-text-orange" : ""}`}
         >
@@ -90,80 +168,176 @@ export default function LoginScreen(): React.JSX.Element {
         <Text className="font-mono text-xs uppercase tracking-widest text-claw-orange/70 text-center mb-8">
           Autonomous AI Agents
         </Text>
+      </>
+    );
+  }
 
-        {/* Error banner */}
-        {error && (
-          <View className="bg-claw-red/10 border border-claw-red/25 p-3 rounded-lg mb-4">
-            <Text className="text-claw-red text-sm text-center">{error}</Text>
-          </View>
-        )}
+  function renderError(): React.JSX.Element | null {
+    if (!error) return null;
+    return (
+      <View className="bg-claw-red/10 border border-claw-red/25 p-3 rounded-lg mb-4">
+        <Text className="text-claw-red text-sm text-center">{error}</Text>
+      </View>
+    );
+  }
 
-        {/* Email input */}
-        <TextInput
-          className={`border rounded-lg px-4 py-3 mb-3 text-base text-text-primary bg-surface-raised ${
-            isWeb
-              ? "border-surface-border/50 focus:border-claw-orange/50"
-              : "border-surface-border"
-          }`}
-          placeholder="Email address"
-          placeholderTextColor="#5a5464"
-          keyboardType="email-address"
-          autoCapitalize="none"
-          autoCorrect={false}
-          value={email}
-          onChangeText={setEmail}
-        />
+  function renderDivider(): React.JSX.Element {
+    return (
+      <View className="flex-row items-center mb-6">
+        <View className="flex-1 h-px bg-surface-border" />
+        <Text className="mx-4 text-text-tertiary text-sm">or</Text>
+        <View className="flex-1 h-px bg-surface-border" />
+      </View>
+    );
+  }
 
-        {/* Magic link button */}
+  // ── Web layout (unchanged) ─────────────────────────────────────────
+
+  if (isWeb) {
+    return (
+      <View className="w-full max-w-sm">
+        <View className="glass-card rounded-3xl p-8">
+          {renderLogo()}
+          {renderError()}
+
+          {/* Email input */}
+          <TextInput
+            className="border rounded-lg px-4 py-3 mb-3 text-base text-text-primary bg-surface-raised border-surface-border/50 focus:border-claw-orange/50"
+            placeholder="Email address"
+            placeholderTextColor="#5a5464"
+            keyboardType="email-address"
+            autoCapitalize="none"
+            autoCorrect={false}
+            value={email}
+            onChangeText={setEmail}
+          />
+
+          {/* Magic link button */}
+          <TouchableOpacity
+            className="bg-claw-orange active:bg-claw-orange-dark rounded-lg py-3 mb-6 items-center glow-orange"
+            onPress={handleMagicLink}
+            disabled={loading}
+          >
+            {loading ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text className="text-white font-semibold text-base">
+                Send Magic Link
+              </Text>
+            )}
+          </TouchableOpacity>
+
+          {renderDivider()}
+
+          {/* OAuth buttons */}
+          <TouchableOpacity
+            className="bg-white border border-white/20 active:bg-gray-100 rounded-lg py-3 mb-3 items-center flex-row justify-center glass-card-hover"
+            onPress={() => handleOAuth("google")}
+          >
+            <Text className="text-base text-gray-900 font-semibold">
+              Continue with Google
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            className="bg-surface-raised border border-surface-border active:bg-surface-overlay rounded-lg py-3 mb-3 items-center flex-row justify-center glass-card-hover"
+            onPress={() => handleOAuth("github")}
+          >
+            <Text className="text-base text-text-primary font-semibold">
+              Continue with GitHub
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            className="border border-surface-border rounded-lg py-3 items-center opacity-50"
+            disabled
+          >
+            <Text className="text-base text-text-tertiary">
+              Connect Wallet (coming soon)
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
+  // ── Mobile layout (iOS / Android) ──────────────────────────────────
+
+  return (
+    <View className="w-full max-w-sm">
+      {renderLogo()}
+      {renderError()}
+
+      {/* Platform-specific native sign-in button */}
+      {isIOS && (
         <TouchableOpacity
-          className={`bg-claw-orange active:bg-claw-orange-dark rounded-lg py-3 mb-6 items-center ${isWeb ? "glow-orange" : ""}`}
-          onPress={handleMagicLink}
+          className="bg-white rounded-lg py-3 mb-4 items-center flex-row justify-center active:bg-gray-100"
+          onPress={handleAppleSignIn}
           disabled={loading}
         >
           {loading ? (
-            <ActivityIndicator color="#fff" />
+            <ActivityIndicator color="#000" />
           ) : (
-            <Text className="text-white font-semibold text-base">
-              Send Magic Link
+            <Text className="text-base text-black font-semibold">
+              Sign in with Apple
             </Text>
           )}
         </TouchableOpacity>
+      )}
 
-        {/* Divider */}
-        <View className="flex-row items-center mb-6">
-          <View className="flex-1 h-px bg-surface-border" />
-          <Text className="mx-4 text-text-tertiary text-sm">or</Text>
-          <View className="flex-1 h-px bg-surface-border" />
-        </View>
-
-        {/* OAuth buttons */}
+      {isAndroid && (
         <TouchableOpacity
-          className={`bg-white border border-white/20 active:bg-gray-100 rounded-lg py-3 mb-3 items-center flex-row justify-center ${isWeb ? "glass-card-hover" : ""}`}
-          onPress={() => handleOAuth("google")}
+          className="bg-white rounded-lg py-3 mb-4 items-center flex-row justify-center active:bg-gray-100"
+          onPress={handleGoogleSignIn}
+          disabled={loading}
         >
-          <Text className="text-base text-gray-900 font-semibold">
-            Continue with Google
-          </Text>
+          {loading ? (
+            <ActivityIndicator color="#000" />
+          ) : (
+            <Text className="text-base text-gray-900 font-semibold">
+              Continue with Google
+            </Text>
+          )}
         </TouchableOpacity>
+      )}
 
-        <TouchableOpacity
-          className={`bg-surface-raised border border-surface-border active:bg-surface-overlay rounded-lg py-3 mb-3 items-center flex-row justify-center ${isWeb ? "glass-card-hover" : ""}`}
-          onPress={() => handleOAuth("github")}
-        >
-          <Text className="text-base text-text-primary font-semibold">
-            Continue with GitHub
-          </Text>
-        </TouchableOpacity>
+      {renderDivider()}
 
-        <TouchableOpacity
-          className="border border-surface-border rounded-lg py-3 items-center opacity-50"
-          disabled
-        >
-          <Text className="text-base text-text-tertiary">
-            Connect Wallet (coming soon)
-          </Text>
-        </TouchableOpacity>
-      </View>
+      {/* Email input */}
+      <TextInput
+        className="border border-surface-border rounded-lg px-4 py-3 mb-3 text-base text-text-primary bg-surface-raised"
+        placeholder="Email address"
+        placeholderTextColor="#5a5464"
+        keyboardType="email-address"
+        autoCapitalize="none"
+        autoCorrect={false}
+        value={email}
+        onChangeText={setEmail}
+      />
+
+      {/* Send Code button */}
+      <TouchableOpacity
+        className="bg-claw-orange active:bg-claw-orange-dark rounded-lg py-3 mb-6 items-center"
+        onPress={handleMagicLink}
+        disabled={loading}
+      >
+        {loading ? (
+          <ActivityIndicator color="#fff" />
+        ) : (
+          <Text className="text-white font-semibold text-base">Send Code</Text>
+        )}
+      </TouchableOpacity>
+
+      {renderDivider()}
+
+      {/* Guest login */}
+      <TouchableOpacity
+        className="items-center py-2"
+        onPress={handleGuestLogin}
+        disabled={loading}
+      >
+        <Text className="text-text-tertiary text-sm">Start as guest</Text>
+      </TouchableOpacity>
     </View>
   );
 }

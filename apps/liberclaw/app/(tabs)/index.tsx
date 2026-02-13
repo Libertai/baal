@@ -9,11 +9,13 @@ import {
   ScrollView,
   Platform,
   TextInput,
+  TouchableOpacity,
 } from "react-native";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { useRouter } from "expo-router";
 
 import { useAgents } from "@/lib/hooks/useAgents";
+import { useAuth } from "@/lib/auth/provider";
 import AgentStatusBadge from "@/components/agent/AgentStatusBadge";
 import type { Agent } from "@/lib/api/types";
 
@@ -383,6 +385,7 @@ function DeployNewCard({ onPress }: DeployNewCardProps) {
 
 export default function AgentDashboard(): React.JSX.Element {
   const router = useRouter();
+  const { user } = useAuth();
   const { data, isLoading, isRefetching, refetch } = useAgents();
   const agents = data?.agents ?? [];
   const [filter, setFilter] = useState<Filter>("all");
@@ -461,6 +464,21 @@ export default function AgentDashboard(): React.JSX.Element {
         columnWrapperStyle={isWeb ? { gap: 12 } : undefined}
         ListHeaderComponent={
           <View className="mb-2">
+            {/* Guest upgrade banner */}
+            {user?.tier === "guest" && (
+              <TouchableOpacity
+                className="bg-claw-orange/10 border border-claw-orange/25 rounded-lg p-3 mb-4 flex-row items-center justify-between"
+                onPress={() => router.push("/(auth)/login")}
+              >
+                <Text className="text-claw-orange text-sm flex-1">
+                  Sign in to unlock more agents and messages
+                </Text>
+                <Text className="text-claw-orange font-semibold text-sm ml-2">
+                  Sign in →
+                </Text>
+              </TouchableOpacity>
+            )}
+
             {/* Header: Title + Beta badge + Create button */}
             <View className="flex-row items-center justify-between mb-6">
               <View className="flex-row items-center gap-3">
