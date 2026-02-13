@@ -1,7 +1,7 @@
 import "@/global.css";
 
-import { useCallback } from "react";
-import { View } from "react-native";
+import { useCallback, useEffect } from "react";
+import { Platform, View } from "react-native";
 import { Stack } from "expo-router";
 import { useFonts } from "expo-font";
 import * as SplashScreen from "expo-splash-screen";
@@ -31,6 +31,20 @@ export default function RootLayout() {
     "JetBrainsMono-SemiBold": require("@/assets/fonts/JetBrainsMono-SemiBold.ttf"),
     "JetBrainsMono-Bold": require("@/assets/fonts/JetBrainsMono-Bold.ttf"),
   });
+
+  useEffect(() => {
+    if (Platform.OS !== "web") {
+      import("@react-native-google-signin/google-signin")
+        .then(({ GoogleOneTapSignIn }) => {
+          GoogleOneTapSignIn.configure({
+            webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID ?? "",
+          });
+        })
+        .catch(() => {
+          // Google Sign-In not available (e.g., iOS without Google services)
+        });
+    }
+  }, []);
 
   const onLayoutRootView = useCallback(async () => {
     if (fontsLoaded) {
