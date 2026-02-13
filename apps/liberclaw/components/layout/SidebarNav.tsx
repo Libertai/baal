@@ -49,7 +49,7 @@ function PulseDot(): React.JSX.Element {
 export default function SidebarNav(): React.JSX.Element {
   const pathname = usePathname();
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const { data: agentsData } = useAgents();
   const agents = agentsData?.agents ?? [];
   const runningAgents = agents.filter((a: any) => a.deployment_status === "running");
@@ -279,6 +279,7 @@ export default function SidebarNav(): React.JSX.Element {
       <View className="border-t border-surface-border p-4">
         {/* Terminate button */}
         <Pressable
+          onPress={logout}
           style={(state) => [
             {
               flexDirection: "row",

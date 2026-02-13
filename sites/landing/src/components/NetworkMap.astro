@@ -50,7 +50,7 @@ const features = "features" in landFeature ? landFeature.features : [landFeature
 const mapPaths = features.map((f: any) => geometryToPath(f.geometry));
 
 // API URL — configurable, falls back to direct CRN list
-const API_URL = import.meta.env.PUBLIC_API_URL || "https://api.liberclaw.io";
+const API_URL = import.meta.env.PUBLIC_API_URL || "http://localhost:8000";
 ---
 
 <div class="glass-widget p-1 overflow-hidden relative flex flex-col" id="network-map">
@@ -259,7 +259,8 @@ const API_URL = import.meta.env.PUBLIC_API_URL || "https://api.liberclaw.io";
   async function fetchFallback() {
     // Fallback: fetch raw CRN list and distribute by region heuristics
     const resp = await fetch("https://crns-list.aleph.sh/crns.json");
-    const crns = await resp.json();
+    const data = await resp.json();
+    const crns = Array.isArray(data) ? data : data.crns || [];
     const active = crns.filter(
       (c) => c.qemu_support && c.system_usage?.active && c.score >= 0.3
     );

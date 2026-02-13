@@ -1,0 +1,16 @@
+liberclaw.ai {
+	root * /root/liberclaw/sites/landing/dist
+	file_server
+	encode gzip
+}
+
+api.liberclaw.ai {
+	reverse_proxy localhost:8000
+}
+
+app.liberclaw.ai {
+	root * /root/liberclaw/apps/liberclaw/dist
+	try_files {path} /index.html
+	file_server
+	encode gzip
+}

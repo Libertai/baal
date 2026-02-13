@@ -143,14 +143,15 @@ async def get_crn_locations(force_refresh: bool = False) -> list[CRNLocation]:
         # 1. Fetch CRN list
         resp = await client.get(CRN_LIST_URL)
         resp.raise_for_status()
-        crns = resp.json()
+        data = resp.json()
+        crns = data.get("crns", []) if isinstance(data, dict) else data
 
         # 2. Filter active CRNs (same criteria as deployer)
         active_crns = [
             c
             for c in crns
             if c.get("qemu_support")
-            and c.get("system_usage", {}).get("active")
+            and (c.get("system_usage") or {}).get("active")
             and c.get("score", 0) >= 0.3
         ]
         logger.info("Found %d active CRNs out of %d total", len(active_crns), len(crns))

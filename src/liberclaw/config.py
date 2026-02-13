@@ -60,9 +60,9 @@ class LiberClawSettings(BaseSettings):
     libertai_api_base_url: str = "https://api.libertai.io/v1"
 
     # Frontend / CORS
-    frontend_url: str = "http://localhost:8081"
-    api_url: str = "http://localhost:8000"
-    cors_origins: list[str] = ["http://localhost:8081"]
+    frontend_url: str = "https://app.liberclaw.ai"
+    api_url: str = "https://api.liberclaw.ai"
+    cors_origins: list[str] = ["https://app.liberclaw.ai", "https://liberclaw.ai"]
 
     # Apple Sign In
     apple_bundle_id: str = "io.libertai.liberclaw"

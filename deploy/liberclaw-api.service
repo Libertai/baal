@@ -1,0 +1,14 @@
+[Unit]
+Description=LiberClaw API
+After=network.target postgresql.service
+
+[Service]
+Type=exec
+WorkingDirectory=/root/liberclaw
+ExecStart=/root/liberclaw/.venv/bin/uvicorn liberclaw.main:app --host 127.0.0.1 --port 8000
+EnvironmentFile=/root/liberclaw/.env
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

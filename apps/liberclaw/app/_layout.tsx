@@ -34,11 +34,18 @@ export default function RootLayout() {
 
   useEffect(() => {
     if (Platform.OS === "android") {
-      import("@react-native-google-signin/google-signin")
-        .then(({ GoogleOneTapSignIn }) => {
-          GoogleOneTapSignIn.configure({
-            webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID ?? "",
-          });
+      // Only works in custom dev builds, not Expo Go
+      import("expo-constants")
+        .then(({ default: Constants }) => {
+          if (Constants.appOwnership === "expo") return; // Expo Go
+          return import("@react-native-google-signin/google-signin");
+        })
+        .then((mod) => {
+          if (mod) {
+            mod.GoogleOneTapSignIn.configure({
+              webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID ?? "",
+            });
+          }
         })
         .catch(() => {});
     }
