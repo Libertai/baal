@@ -11,7 +11,7 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from liberclaw.auth.dependencies import get_current_user, get_settings
+from liberclaw.auth.dependencies import get_current_user, get_optional_user, get_settings
 from liberclaw.auth.jwt import (
     create_access_token,
     create_refresh_token,
@@ -184,6 +184,7 @@ async def verify_magic_link(
     body: MagicLinkVerifyRequest,
     request: Request,
     db: AsyncSession = Depends(get_db),
+    current_user: User | None = Depends(get_optional_user),
 ):
     """Verify a magic link token or 6-digit code and return JWT pair."""
     settings = get_settings()
@@ -200,7 +201,19 @@ async def verify_magic_link(
     if not email:
         raise HTTPException(status_code=400, detail="Invalid or expired code")
 
-    user = await _get_or_create_user_by_email(db, email)
+    if current_user and current_user.tier == "guest":
+        # Check email isn't already taken
+        result = await db.execute(select(User).where(User.email == email))
+        existing = result.scalar_one_or_none()
+        if existing and existing.id != current_user.id:
+            raise HTTPException(status_code=409, detail="Email already linked to another account")
+        current_user.email = email
+        current_user.email_verified = True
+        current_user.tier = "free"
+        user = current_user
+    else:
+        user = await _get_or_create_user_by_email(db, email)
+
     device_info = request.headers.get("user-agent", "")[:500]
     return await _create_session_and_tokens(db, user, device_info)
 
@@ -433,6 +446,7 @@ async def mobile_google_login(
     body: GoogleIdTokenRequest,
     request: Request,
     db: AsyncSession = Depends(get_db),
+    current_user: User | None = Depends(get_optional_user),
 ):
     """Verify a Google ID token from native sign-in and return JWT pair."""
     settings = get_settings()
@@ -447,6 +461,34 @@ async def mobile_google_login(
     if not email:
         raise HTTPException(status_code=400, detail="No email in Google token")
 
+    # If a guest user is upgrading, attach OAuth to their account
+    if current_user and current_user.tier == "guest":
+        result = await db.execute(select(User).where(User.email == email))
+        existing = result.scalar_one_or_none()
+        if existing and existing.id != current_user.id:
+            raise HTTPException(status_code=409, detail="Email already linked to another account")
+
+        conn = OAuthConnection(
+            user_id=current_user.id,
+            provider="google",
+            provider_id=claims["sub"],
+            provider_email=email,
+        )
+        db.add(conn)
+        current_user.tier = "free"
+        if not current_user.email:
+            current_user.email = email
+            current_user.email_verified = True
+        if not current_user.display_name:
+            current_user.display_name = claims.get("name")
+        if not current_user.avatar_url:
+            current_user.avatar_url = claims.get("picture")
+        await db.flush()
+
+        device_info = request.headers.get("user-agent", "")[:500]
+        return await _create_session_and_tokens(db, current_user, device_info)
+
+    # Normal flow — find or create user via OAuth
     user_info = {
         "provider": "google",
         "provider_id": claims["sub"],
@@ -469,6 +511,7 @@ async def mobile_apple_login(
     body: AppleIdTokenRequest,
     request: Request,
     db: AsyncSession = Depends(get_db),
+    current_user: User | None = Depends(get_optional_user),
 ):
     """Verify an Apple identity token from native sign-in and return JWT pair."""
     settings = get_settings()
@@ -480,6 +523,33 @@ async def mobile_apple_login(
     email = claims.get("email")
     apple_sub = claims["sub"]
 
+    # If a guest user is upgrading, attach OAuth to their account
+    if current_user and current_user.tier == "guest":
+        if email:
+            result = await db.execute(select(User).where(User.email == email))
+            existing = result.scalar_one_or_none()
+            if existing and existing.id != current_user.id:
+                raise HTTPException(status_code=409, detail="Email already linked to another account")
+
+        conn = OAuthConnection(
+            user_id=current_user.id,
+            provider="apple",
+            provider_id=apple_sub,
+            provider_email=email,
+        )
+        db.add(conn)
+        current_user.tier = "free"
+        if email and not current_user.email:
+            current_user.email = email
+            current_user.email_verified = True
+        if not current_user.display_name and body.full_name:
+            current_user.display_name = body.full_name
+        await db.flush()
+
+        device_info = request.headers.get("user-agent", "")[:500]
+        return await _create_session_and_tokens(db, current_user, device_info)
+
+    # Normal flow — find or create user via OAuth
     user_info = {
         "provider": "apple",
         "provider_id": apple_sub,
