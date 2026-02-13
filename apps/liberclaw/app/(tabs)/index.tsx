@@ -15,13 +15,12 @@ import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { useRouter } from "expo-router";
 
 import { useAgents } from "@/lib/hooks/useAgents";
+import { useUsage } from "@/lib/hooks/useUsage";
 import { useAuth } from "@/lib/auth/provider";
 import AgentStatusBadge from "@/components/agent/AgentStatusBadge";
 import type { Agent } from "@/lib/api/types";
 
 const isWeb = Platform.OS === "web";
-
-const MAX_AGENT_SLOTS = 5;
 
 const MODEL_BRANDS: Record<string, string> = {
   "qwen3-coder-next": "Claw-Core",
@@ -387,7 +386,9 @@ export default function AgentDashboard(): React.JSX.Element {
   const router = useRouter();
   const { user } = useAuth();
   const { data, isLoading, isRefetching, refetch } = useAgents();
+  const { data: usage } = useUsage();
   const agents = data?.agents ?? [];
+  const agentLimit = usage?.agent_limit ?? agents.length;
   const [filter, setFilter] = useState<Filter>("all");
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -520,13 +521,13 @@ export default function AgentDashboard(): React.JSX.Element {
 
             {/* Stats Row */}
             <View className="flex-row gap-3 mb-6">
-              <SlotsCard used={agents.length} total={MAX_AGENT_SLOTS} />
+              <SlotsCard used={agents.length} total={agentLimit} />
               <CountCard
                 label="Active Agents"
                 count={runningCount}
                 badgeLabel="Running"
                 badgeColor="green"
-                subtitle="99.8% Uptime"
+                subtitle={`${runningCount} of ${agents.length} online`}
                 icon="check-circle"
               />
               <CountCard

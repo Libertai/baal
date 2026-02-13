@@ -38,10 +38,7 @@ async def send_message(
         raise HTTPException(status_code=400, detail="Agent is not running")
 
     # Rate limiting
-    daily_limit = (
-        settings.guest_daily_messages if user.tier == "guest"
-        else settings.free_tier_daily_messages
-    )
+    daily_limit = settings.daily_message_limit(user.tier)
     allowed, remaining = await check_and_increment(db, user.id, daily_limit)
     if not allowed:
         raise HTTPException(

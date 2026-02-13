@@ -67,13 +67,33 @@ class LiberClawSettings(BaseSettings):
     # Apple Sign In
     apple_bundle_id: str = "io.libertai.liberclaw"
 
-    # Limits
-    free_tier_daily_messages: int = 50
-    max_agents_per_user: int = 5
-
-    # Guest tier limits
-    guest_daily_messages: int = 5
+    # Tier limits — guest
+    guest_daily_messages: int = 10
     guest_max_agents: int = 1
+
+    # Tier limits — free
+    free_daily_messages: int = 100
+    free_max_agents: int = 3
+
+    # Tier limits — pro
+    pro_daily_messages: int = 1000
+    pro_max_agents: int = 20
+
+    def daily_message_limit(self, tier: str) -> int:
+        """Return daily message limit for the given tier."""
+        if tier == "pro":
+            return self.pro_daily_messages
+        if tier == "guest":
+            return self.guest_daily_messages
+        return self.free_daily_messages
+
+    def agent_limit(self, tier: str) -> int:
+        """Return max agents for the given tier."""
+        if tier == "pro":
+            return self.pro_max_agents
+        if tier == "guest":
+            return self.guest_max_agents
+        return self.free_max_agents
     default_model: str = "qwen3-coder-next"
 
     # VM Pool

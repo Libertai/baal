@@ -1,24 +1,21 @@
+/**
+ * Settings / Account screen (desktop sidebar variant).
+ * Mirrors profile.tsx — both render the same Account Overview.
+ */
+
 import { useState } from "react";
 import { View, Text, TouchableOpacity, ScrollView, Platform } from "react-native";
 import Toggle from "@/components/ui/Toggle";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 
 import { useAuth } from "@/lib/auth/provider";
+import { useUsage } from "@/lib/hooks/useUsage";
 
 const isWeb = Platform.OS === "web";
 
 // ── Types ────────────────────────────────────────────────────────────
 
 type IconName = React.ComponentProps<typeof MaterialIcons>["name"];
-
-interface ActivityEntry {
-  agentName: string;
-  initial: string;
-  action: string;
-  status: "success" | "failed" | "pending";
-  tokens: string;
-  time: string;
-}
 
 interface SettingsRowProps {
   icon: IconName;
@@ -33,46 +30,16 @@ interface SlotIndicatorProps {
   total: number;
 }
 
-// ── Mock Data ────────────────────────────────────────────────────────
+// ── Reusable badges ──────────────────────────────────────────────────
 
-const RECENT_ACTIVITY: ActivityEntry[] = [
-  {
-    agentName: "Customer Support Bot",
-    initial: "C",
-    action: "Chat Session",
-    status: "success",
-    tokens: "245",
-    time: "2 min ago",
-  },
-  {
-    agentName: "Data Analyzer",
-    initial: "D",
-    action: "Tool Execution",
-    status: "success",
-    tokens: "1,024",
-    time: "15 min ago",
-  },
-  {
-    agentName: "Translator V2",
-    initial: "T",
-    action: "Deployment",
-    status: "failed",
-    tokens: "--",
-    time: "1 hr ago",
-  },
-];
-
-// ── Status helpers ───────────────────────────────────────────────────
-
-function getStatusBadge(status: ActivityEntry["status"]): { label: string; bg: string; text: string } {
-  switch (status) {
-    case "success":
-      return { label: "Success", bg: "bg-status-running/15", text: "text-status-running" };
-    case "failed":
-      return { label: "Failed", bg: "bg-status-failed/15", text: "text-status-failed" };
-    case "pending":
-      return { label: "Pending", bg: "bg-status-deploying/15", text: "text-status-deploying" };
-  }
+function ComingSoonBadge(): React.ReactElement {
+  return (
+    <View className="bg-surface-overlay border border-surface-border rounded-full px-2 py-0.5">
+      <Text className="font-mono text-[9px] uppercase tracking-wider text-text-tertiary font-semibold">
+        Coming Soon
+      </Text>
+    </View>
+  );
 }
 
 // ── Card wrapper ─────────────────────────────────────────────────────
@@ -124,70 +91,21 @@ function SlotIndicator({ filled, total }: SlotIndicatorProps): React.ReactElemen
   return <View className="flex-row gap-1.5 mt-2">{slots}</View>;
 }
 
-// ── Activity Row ─────────────────────────────────────────────────────
-
-function ActivityRow({ entry, isLast }: { entry: ActivityEntry; isLast: boolean }): React.ReactElement {
-  const badge = getStatusBadge(entry.status);
-  const borderClass = isLast ? "" : "border-b border-surface-border";
-
-  return (
-    <View className={`flex-row items-center px-4 py-3 ${borderClass}`}>
-      {/* Agent avatar + name */}
-      <View className="w-8 h-8 rounded-lg bg-claw-orange/10 border border-claw-orange/20 items-center justify-center mr-3">
-        <Text className="text-claw-orange font-bold text-sm">{entry.initial}</Text>
-      </View>
-      <View className="flex-1 mr-3">
-        <Text className="text-text-primary text-sm font-medium" numberOfLines={1}>
-          {entry.agentName}
-        </Text>
-        <Text className="text-text-tertiary text-xs mt-0.5">{entry.action}</Text>
-      </View>
-
-      {/* Status badge */}
-      <View className={`rounded-full px-2 py-0.5 mr-3 ${badge.bg}`}>
-        <Text className={`font-mono text-[10px] uppercase tracking-wider font-semibold ${badge.text}`}>
-          {badge.label}
-        </Text>
-      </View>
-
-      {/* Tokens */}
-      <Text className="font-mono text-xs text-text-secondary w-14 text-right mr-3">
-        {entry.tokens}
-      </Text>
-
-      {/* Time */}
-      <Text className="text-text-tertiary text-xs w-16 text-right">{entry.time}</Text>
-    </View>
-  );
-}
-
-// ── Checklist item for upgrade CTA ───────────────────────────────────
-
-function CheckItem({ label }: { label: string }): React.ReactElement {
-  return (
-    <View className="flex-row items-center">
-      <MaterialIcons name="check-circle" size={18} color="white" />
-      <Text className="text-white text-sm ml-2">{label}</Text>
-    </View>
-  );
-}
-
 // ── Main Screen ──────────────────────────────────────────────────────
 
 export default function SettingsScreen(): React.ReactElement {
   const { user, logout } = useAuth();
+  const { data: usage } = useUsage();
   const [showToolCalls, setShowToolCalls] = useState(user?.show_tool_calls ?? true);
 
-  const tier = user?.tier ?? "free";
-  const isPremium = tier === "pro" || tier === "premium";
-  const tierLabel = isPremium ? "Pro Plan" : "Free Plan";
+  const tier = usage?.tier ?? user?.tier ?? "free";
+  const tierLabel = tier === "pro" ? "Pro Plan" : tier === "guest" ? "Guest" : "Free Plan";
 
-  // Placeholder usage values (to be wired to real API later)
-  const messagesUsed = 23;
-  const messagesLimit = 50;
-  const messagePercent = Math.round((messagesUsed / messagesLimit) * 100);
-  const agentCount = 2;
-  const agentLimit = isPremium ? 10 : 3;
+  const messagesUsed = usage?.daily_messages_used ?? 0;
+  const messagesLimit = usage?.daily_messages_limit ?? 50;
+  const messagePercent = messagesLimit > 0 ? Math.round((messagesUsed / messagesLimit) * 100) : 0;
+  const agentCount = usage?.agent_count ?? 0;
+  const agentLimit = usage?.agent_limit ?? 5;
 
   return (
     <ScrollView
@@ -200,8 +118,8 @@ export default function SettingsScreen(): React.ReactElement {
           Account Overview
         </Text>
         <View className="flex-row items-center gap-3">
-          <TouchableOpacity activeOpacity={0.7}>
-            <MaterialIcons name="notifications-none" size={24} color="#8a8494" />
+          <TouchableOpacity activeOpacity={0.7} className="relative">
+            <MaterialIcons name="notifications-none" size={24} color="#5a5464" />
           </TouchableOpacity>
           <View className="bg-claw-orange/15 border border-claw-orange/25 rounded-full px-3 py-1">
             <Text className="font-mono text-[10px] uppercase tracking-wider text-claw-orange font-semibold">
@@ -211,7 +129,7 @@ export default function SettingsScreen(): React.ReactElement {
         </View>
       </View>
 
-      {/* ── 3-Column Stats Grid ──────────────────────────────────── */}
+      {/* ── Stats Grid ─────────────────────────────────────────── */}
       <View
         className="mb-6"
         style={
@@ -220,7 +138,6 @@ export default function SettingsScreen(): React.ReactElement {
             : undefined
         }
       >
-        {/* On native, stack vertically with gaps */}
         {!isWeb && (
           <View className="gap-3">
             <MessageUsageCard
@@ -229,11 +146,10 @@ export default function SettingsScreen(): React.ReactElement {
               percent={messagePercent}
             />
             <AgentSlotsCard filled={agentCount} total={agentLimit} />
-            {!isPremium && <UpgradeCard />}
+            {tier !== "pro" && <UpgradeCard />}
           </View>
         )}
 
-        {/* On web, cards render directly into the CSS grid */}
         {isWeb && (
           <>
             <MessageUsageCard
@@ -242,54 +158,25 @@ export default function SettingsScreen(): React.ReactElement {
               percent={messagePercent}
             />
             <AgentSlotsCard filled={agentCount} total={agentLimit} />
-            {!isPremium && <UpgradeCard />}
+            {tier !== "pro" && <UpgradeCard />}
           </>
         )}
       </View>
 
       {/* ── Recent Activity ──────────────────────────────────────── */}
       <Card className="overflow-hidden mb-6">
-        {/* Section header */}
         <View className="flex-row items-center justify-between px-4 py-3 border-b border-surface-border">
           <Text className="text-text-primary text-base font-bold font-display">
             Recent Activity
           </Text>
-          <TouchableOpacity activeOpacity={0.7}>
-            <Text className="text-claw-orange text-sm font-medium">View All Logs</Text>
-          </TouchableOpacity>
+          <ComingSoonBadge />
         </View>
-
-        {/* Column headers (web only) */}
-        {isWeb && (
-          <View className="flex-row items-center px-4 py-2 border-b border-surface-border">
-            <Text className="flex-1 font-mono text-[10px] uppercase tracking-wider text-text-tertiary">
-              Agent Name
-            </Text>
-            <Text className="font-mono text-[10px] uppercase tracking-wider text-text-tertiary w-20 mr-3">
-              Status
-            </Text>
-            <Text className="font-mono text-[10px] uppercase tracking-wider text-text-tertiary w-14 text-right mr-3">
-              Tokens
-            </Text>
-            <Text className="font-mono text-[10px] uppercase tracking-wider text-text-tertiary w-16 text-right">
-              Time
-            </Text>
+        <View className="p-6 items-center">
+          <View className="w-12 h-12 rounded-full bg-surface-overlay border border-surface-border items-center justify-center mb-3">
+            <MaterialIcons name="timeline" size={22} color="#5a5464" />
           </View>
-        )}
-
-        {/* Rows */}
-        {RECENT_ACTIVITY.map((entry, i) => (
-          <ActivityRow
-            key={entry.agentName}
-            entry={entry}
-            isLast={i === RECENT_ACTIVITY.length - 1}
-          />
-        ))}
-
-        {/* Footer */}
-        <View className="px-4 py-2 border-t border-surface-border">
-          <Text className="text-text-tertiary text-xs text-center">
-            Showing last {RECENT_ACTIVITY.length} activities
+          <Text className="text-text-secondary text-sm text-center">
+            Activity logs will appear here once available.
           </Text>
         </View>
       </Card>
@@ -300,16 +187,12 @@ export default function SettingsScreen(): React.ReactElement {
           <MaterialIcons name="receipt-long" size={24} color="#5a5464" />
         </View>
         <Text className="text-text-primary text-base font-bold font-display mb-1">
-          No invoices yet
+          Billing History
         </Text>
         <Text className="text-text-secondary text-sm text-center mb-3">
-          Your billing history will appear here once you upgrade.
+          Invoices and payment history will appear here.
         </Text>
-        <TouchableOpacity activeOpacity={0.7}>
-          <Text className="text-claw-orange text-sm font-medium">
-            {"View Pricing Plans \u2192"}
-          </Text>
-        </TouchableOpacity>
+        <ComingSoonBadge />
       </Card>
 
       {/* ── Settings ─────────────────────────────────────────────── */}
@@ -327,12 +210,7 @@ export default function SettingsScreen(): React.ReactElement {
         <SettingsRow
           icon="vpn-key"
           label="API Keys"
-          onPress={() => {
-            // TODO: navigate to API keys screen
-          }}
-          trailing={
-            <MaterialIcons name="chevron-right" size={20} color="#5a5464" />
-          }
+          trailing={<ComingSoonBadge />}
         />
         <SettingsRow
           icon="dark-mode"
@@ -379,10 +257,9 @@ interface MessageUsageCardProps {
 function MessageUsageCard({ used, limit, percent }: MessageUsageCardProps): React.ReactElement {
   return (
     <Card className="p-4">
-      {/* Header row */}
       <View className="flex-row items-center justify-between mb-2">
         <Text className="font-mono text-[10px] uppercase tracking-wider text-text-tertiary">
-          Message Usage
+          Daily Messages
         </Text>
         <View className="flex-row items-center gap-1.5 bg-status-running/15 rounded-full px-2 py-0.5">
           <View className="w-1.5 h-1.5 rounded-full bg-status-running" />
@@ -392,13 +269,11 @@ function MessageUsageCard({ used, limit, percent }: MessageUsageCardProps): Reac
         </View>
       </View>
 
-      {/* Large number */}
       <View className="flex-row items-baseline mb-3">
         <Text className="text-text-primary text-3xl font-bold">{used}</Text>
         <Text className="text-text-secondary text-sm ml-1">/{limit} messages</Text>
       </View>
 
-      {/* Progress bar */}
       <View className="h-3 bg-surface-border rounded-full overflow-hidden mb-2">
         <View
           className="h-full bg-claw-orange rounded-full"
@@ -406,13 +281,12 @@ function MessageUsageCard({ used, limit, percent }: MessageUsageCardProps): Reac
         />
       </View>
 
-      {/* Footer row */}
       <View className="flex-row items-center justify-between">
         <View className="flex-row items-center">
           <MaterialIcons name="schedule" size={14} color="#5a5464" />
-          <Text className="text-text-tertiary text-xs ml-1">Resets in 4h 12m</Text>
+          <Text className="text-text-tertiary text-xs ml-1">Resets daily</Text>
         </View>
-        <Text className="text-text-secondary text-xs font-medium">{percent}% Used</Text>
+        <Text className="text-text-secondary text-xs font-medium">{percent}% used</Text>
       </View>
     </Card>
   );
@@ -426,7 +300,6 @@ interface AgentSlotsCardProps {
 function AgentSlotsCard({ filled, total }: AgentSlotsCardProps): React.ReactElement {
   return (
     <Card className="p-4">
-      {/* Header row */}
       <View className="flex-row items-start justify-between mb-2">
         <Text className="font-mono text-[10px] uppercase tracking-wider text-text-tertiary">
           Agent Slots
@@ -436,23 +309,23 @@ function AgentSlotsCard({ filled, total }: AgentSlotsCardProps): React.ReactElem
         </View>
       </View>
 
-      {/* Large number */}
       <View className="flex-row items-baseline mb-2">
         <Text className="text-text-primary text-3xl font-bold">{filled}</Text>
         <Text className="text-text-secondary text-sm ml-1">/{total} slots used</Text>
       </View>
 
-      {/* Slot indicators */}
       <SlotIndicator filled={filled} total={total} />
 
       {/* Buy more button */}
-      <TouchableOpacity
-        className="flex-row items-center justify-center mt-3 py-2 rounded-lg border border-surface-border"
-        activeOpacity={0.7}
+      <View
+        className="flex-row items-center justify-center mt-3 py-2 rounded-lg border border-surface-border opacity-50"
       >
         <MaterialIcons name="add-circle-outline" size={16} color="#8a8494" />
         <Text className="text-text-secondary text-sm font-medium ml-1.5">Buy More Slots</Text>
-      </TouchableOpacity>
+        <View className="ml-2">
+          <ComingSoonBadge />
+        </View>
+      </View>
     </Card>
   );
 }
@@ -470,7 +343,6 @@ function UpgradeCard(): React.ReactElement {
           : { backgroundColor: "#ff5e00" }
       }
     >
-      {/* Dot pattern overlay (web only) */}
       {isWeb && (
         <View
           style={{
@@ -486,14 +358,13 @@ function UpgradeCard(): React.ReactElement {
         />
       )}
 
-      {/* Header */}
       <View className="flex-row items-center gap-2 mb-2">
         <Text className="text-white font-bold text-lg font-display">
           Upgrade to Pro
         </Text>
         <View className="bg-white/20 rounded-full px-2 py-0.5">
           <Text className="font-mono text-[10px] uppercase tracking-wider text-white font-semibold">
-            Recommended
+            Coming Soon
           </Text>
         </View>
       </View>
@@ -502,22 +373,28 @@ function UpgradeCard(): React.ReactElement {
         Remove limits and unleash the full potential of your AI agents.
       </Text>
 
-      {/* Checklist */}
       <View className="gap-2 mb-4">
-        <CheckItem label="Unlimited Messages" />
-        <CheckItem label="10 Agent Slots" />
-        <CheckItem label="Premium Models" />
+        <View className="flex-row items-center">
+          <MaterialIcons name="check-circle" size={18} color="white" />
+          <Text className="text-white text-sm ml-2">Unlimited Messages</Text>
+        </View>
+        <View className="flex-row items-center">
+          <MaterialIcons name="check-circle" size={18} color="white" />
+          <Text className="text-white text-sm ml-2">More Agent Slots</Text>
+        </View>
+        <View className="flex-row items-center">
+          <MaterialIcons name="check-circle" size={18} color="white" />
+          <Text className="text-white text-sm ml-2">Premium Models</Text>
+        </View>
       </View>
 
-      {/* CTA button */}
-      <TouchableOpacity
-        className="bg-white rounded-lg py-2.5 items-center"
-        activeOpacity={0.8}
+      <View
+        className="bg-white/30 rounded-lg py-2.5 items-center"
       >
-        <Text className="text-claw-orange font-bold text-base">
-          {"Upgrade Now \u2192"}
+        <Text className="text-white font-bold text-base">
+          Stay Tuned
         </Text>
-      </TouchableOpacity>
+      </View>
     </View>
   );
 }

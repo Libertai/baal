@@ -60,10 +60,7 @@ async def create_user_agent(
     settings = get_settings()
 
     # Check agent limit
-    agent_limit = (
-        settings.guest_max_agents if user.tier == "guest"
-        else settings.max_agents_per_user
-    )
+    agent_limit = settings.agent_limit(user.tier)
     count = await get_agent_count(db, user.id)
     if count >= agent_limit:
         raise HTTPException(
