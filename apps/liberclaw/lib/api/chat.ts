@@ -126,6 +126,16 @@ export async function streamChat(
 }
 
 /**
+ * Fetch conversation history from the agent VM.
+ */
+export async function getChatHistory(
+  agentId: string,
+): Promise<ChatMessage[]> {
+  const res = await apiFetch<{ messages: ChatMessage[] }>(`/chat/${agentId}/history`);
+  return res.messages;
+}
+
+/**
  * Clear conversation history for an agent.
  */
 export async function clearChat(agentId: string): Promise<void> {

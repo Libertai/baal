@@ -514,6 +514,30 @@ async def chat(req: ChatRequest):
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
+@app.get("/chat/{chat_id}/history")
+async def get_chat_history(chat_id: str, limit: int = 50):
+    """Return conversation history as ChatMessage events for the frontend."""
+    messages = await db.get_history(chat_id, limit=limit)
+    events = []
+    for msg in messages:
+        role = msg["role"]
+        if role == "user":
+            events.append({"type": "text", "content": msg.get("content", ""), "name": "user"})
+        elif role == "assistant":
+            if msg.get("content"):
+                events.append({"type": "text", "content": msg["content"]})
+            if msg.get("tool_calls"):
+                for tc in msg["tool_calls"]:
+                    fn = tc.get("function", {})
+                    events.append({
+                        "type": "tool_use",
+                        "name": fn.get("name", ""),
+                        "input": fn.get("arguments", ""),
+                    })
+        # Skip tool-result messages (role == "tool") — they're internal
+    return {"messages": events}
+
+
 @app.delete("/chat/{chat_id}")
 async def delete_chat(chat_id: str):
     """Clear conversation history for a chat."""

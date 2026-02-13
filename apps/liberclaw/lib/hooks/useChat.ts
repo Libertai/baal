@@ -7,7 +7,7 @@
 
 import { useCallback, useEffect, useRef } from "react";
 
-import { streamChat, clearChat } from "@/lib/api/chat";
+import { streamChat, clearChat, getChatHistory } from "@/lib/api/chat";
 import type { ChatMessage } from "@/lib/api/types";
 import { useChatStore } from "@/lib/store/chat";
 
@@ -27,6 +27,7 @@ export function useChat(agentId: string): UseChatReturn {
     messages: allMessages,
     streamingAgentId,
     addMessage,
+    setMessages,
     setStreaming,
     clearMessages,
   } = useChatStore();
@@ -34,6 +35,20 @@ export function useChat(agentId: string): UseChatReturn {
   const messages = allMessages.get(agentId) ?? [];
   const isStreaming = streamingAgentId === agentId;
   const abortRef = useRef<AbortController | null>(null);
+
+  // Load history from server on first mount (if no messages in store yet)
+  useEffect(() => {
+    if (allMessages.has(agentId)) return;
+    getChatHistory(agentId)
+      .then((history) => {
+        if (history.length > 0) {
+          setMessages(agentId, history);
+        }
+      })
+      .catch(() => {
+        // Silently ignore — agent may be offline
+      });
+  }, [agentId]);
 
   // Cancel stream on unmount or agent change
   useEffect(() => {

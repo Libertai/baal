@@ -13,6 +13,8 @@ interface ChatState {
 
   /** Append a single message to an agent's conversation. */
   addMessage: (agentId: string, msg: ChatMessage) => void;
+  /** Set messages for an agent (used for loading history). Only sets if no messages exist yet. */
+  setMessages: (agentId: string, msgs: ChatMessage[]) => void;
   /** Mark which agent is currently streaming (or null to clear). */
   setStreaming: (agentId: string | null) => void;
   /** Clear all messages for a given agent. */
@@ -28,6 +30,15 @@ export const useChatStore = create<ChatState>((set) => ({
       const next = new Map(state.messages);
       const existing = next.get(agentId) ?? [];
       next.set(agentId, [...existing, msg]);
+      return { messages: next };
+    }),
+
+  setMessages: (agentId, msgs) =>
+    set((state) => {
+      // Only set if no messages exist yet (don't overwrite active conversation)
+      if (state.messages.has(agentId)) return state;
+      const next = new Map(state.messages);
+      next.set(agentId, msgs);
       return { messages: next };
     }),
 

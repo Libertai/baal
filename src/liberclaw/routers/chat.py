@@ -61,6 +61,37 @@ async def send_message(
     )
 
 
+@router.get("/{agent_id}/history")
+async def get_history(
+    agent_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Proxy conversation history from the agent VM."""
+    settings = get_settings()
+
+    agent = await get_agent(db, agent_id, user.id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    if not agent.vm_url:
+        return {"messages": []}
+
+    auth_token = decrypt(agent.auth_token, settings.encryption_key)
+    chat_id = f"{user.id}:{agent.id}"
+
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(
+                f"{agent.vm_url}/chat/{chat_id}/history",
+                headers={"Authorization": f"Bearer {auth_token}"},
+            )
+            resp.raise_for_status()
+            return resp.json()
+    except Exception:
+        return {"messages": []}
+
+
 @router.delete("/{agent_id}", status_code=204)
 async def clear_chat(
     agent_id: uuid.UUID,
