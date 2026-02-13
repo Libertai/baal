@@ -41,6 +41,7 @@ class User(Base):
     display_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
     avatar_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     tier: Mapped[str] = mapped_column(String(20), default="free")
+    device_id: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True)
     show_tool_calls: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(
@@ -109,6 +110,8 @@ class MagicLink(Base):
     token_hash: Mapped[str] = mapped_column(String(64), unique=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    code_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 
