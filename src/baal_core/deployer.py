@@ -547,7 +547,7 @@ class AlephDeployer:
                 "apt-get update -qq && "
                 "apt-get install -y -qq python3 python3-pip python3-venv && "
                 "python3 -m venv /opt/baal-agent && "
-                "/opt/baal-agent/bin/pip install fastapi uvicorn openai aiosqlite pydantic-settings httpx"
+                "/opt/baal-agent/bin/pip install fastapi uvicorn openai aiosqlite pydantic-settings httpx python-multipart"
             )
             code, _, stderr = await self._ssh_run(vm_ip, ssh_port, install_cmd, timeout=300)
             steps.append({"step": "install_deps", "success": code == 0})
@@ -590,6 +590,13 @@ class AlephDeployer:
             )
 
         steps.append({"step": "write_agent_code", "success": True})
+
+        # Ensure any new Python packages are installed (idempotent)
+        await self._ssh_run(
+            vm_ip, ssh_port,
+            "/opt/baal-agent/bin/pip install -q python-multipart 2>/dev/null || true",
+            timeout=60,
+        )
 
         # Write .env file
         _notify("environment", "active", "Configuring environment...")
@@ -716,7 +723,7 @@ class AlephDeployer:
             "apt-get update -qq && "
             "apt-get install -y -qq python3 python3-pip python3-venv && "
             "python3 -m venv /opt/baal-agent && "
-            "/opt/baal-agent/bin/pip install fastapi uvicorn openai aiosqlite pydantic-settings httpx"
+            "/opt/baal-agent/bin/pip install fastapi uvicorn openai aiosqlite pydantic-settings httpx python-multipart"
         )
         code, _, stderr = await self._ssh_run(vm_ip, ssh_port, install_cmd, timeout=600)
         if code != 0:
@@ -804,6 +811,13 @@ class AlephDeployer:
                 f"cp -rn {agent_dir}/baal_agent/workspace/skills/* /opt/baal-agent/workspace/skills/ 2>/dev/null || true",
             )
         steps.append({"step": "write_agent_code", "success": True})
+
+        # Ensure any new Python packages are installed (idempotent)
+        await self._ssh_run(
+            vm_ip, ssh_port,
+            "/opt/baal-agent/bin/pip install -q python-multipart 2>/dev/null || true",
+            timeout=60,
+        )
 
         # Write .env file
         env_content = (
