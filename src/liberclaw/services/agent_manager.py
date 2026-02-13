@@ -77,6 +77,7 @@ async def update_agent(
     name: str | None = None,
     system_prompt: str | None = None,
     model: str | None = None,
+    skills: list[str] | None = None,
 ) -> Agent:
     """Update agent configuration fields."""
     if name is not None:
@@ -87,6 +88,8 @@ async def update_agent(
         if model not in AVAILABLE_MODELS:
             raise ValueError(f"Unknown model: {model}")
         agent.model = model
+    if skills is not None:
+        agent.skills = json.dumps(skills) if skills else None
     await db.flush()
     return agent
 
@@ -274,7 +277,7 @@ async def deploy_agent_background(
                 set_step(agent_id, "health", "failed",
                          "Agent is not responding after deployment")
                 add_log(agent_id, "error",
-                        "Health check failed — agent deployed but not responding. Use Repair to retry.")
+                        "Health check failed — agent deployed but not responding. Use Rebuild to retry.")
                 agent.vm_url = vm_url
                 agent.deployment_status = "failed"
                 db.add(DeploymentHistory(
@@ -363,7 +366,7 @@ async def redeploy_agent_background(
                 set_step(agent_id, "allocation", "failed",
                          "Could not reach existing VM")
                 add_log(agent_id, "error",
-                        "VM not reachable — it may have been destroyed. Use Repair instead.")
+                        "VM not reachable — it may have been destroyed. Use Rebuild instead.")
                 agent.deployment_status = "failed"
                 db.add(DeploymentHistory(
                     agent_id=agent_id, status="failed",
@@ -445,7 +448,7 @@ async def redeploy_agent_background(
                 set_step(agent_id, "health", "failed",
                          "Agent not responding after redeploy")
                 add_log(agent_id, "error",
-                        "Health check failed after redeploy. Use Repair to retry.")
+                        "Health check failed after redeploy. Use Rebuild to retry.")
                 agent.deployment_status = "failed"
                 db.add(DeploymentHistory(
                     agent_id=agent_id, status="failed",

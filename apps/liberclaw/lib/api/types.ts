@@ -81,6 +81,7 @@ export interface AgentUpdate {
   name?: string;
   system_prompt?: string;
   model?: string;
+  skills?: string[];
 }
 
 // ── Templates & Skills ───────────────────────────────────────────────

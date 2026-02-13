@@ -20,6 +20,7 @@ class AgentUpdate(BaseModel):
     name: str | None = Field(None, min_length=1, max_length=100)
     system_prompt: str | None = Field(None, min_length=1)
     model: str | None = None
+    skills: list[str] | None = None
 
 
 class AgentResponse(BaseModel):

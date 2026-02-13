@@ -77,10 +77,10 @@ export async function getDeploymentStatus(
 }
 
 /**
- * Retry a failed deployment.
+ * Destroy existing VM and deploy a fresh one from scratch.
  */
-export async function repairAgent(id: string): Promise<Agent> {
-  return apiFetch<Agent>(`/agents/${id}/repair`, {
+export async function rebuildAgent(id: string): Promise<Agent> {
+  return apiFetch<Agent>(`/agents/${id}/rebuild`, {
     method: "POST",
   });
 }

@@ -613,22 +613,38 @@ export default function AgentDetailScreen() {
                   </Text>
                 </View>
                 <Text className="text-xs text-text-tertiary mb-3">
-                  The agent could not start. Rebuild will destroy the current VM and create a fresh one.
+                  The agent could not start. Try pushing an update first, or rebuild to create a fresh VM from scratch.
                 </Text>
-                <TouchableOpacity
-                  className="bg-claw-orange active:bg-claw-orange-dark rounded-lg py-3 flex-row items-center justify-center gap-2"
-                  onPress={handleRebuild}
-                  disabled={rebuilding}
-                >
-                  {rebuilding ? (
-                    <ActivityIndicator color="#ffffff" />
-                  ) : (
-                    <>
-                      <MaterialIcons name="build" size={18} color="#ffffff" />
-                      <Text className="text-white font-bold">Rebuild</Text>
-                    </>
-                  )}
-                </TouchableOpacity>
+                <View className="flex-row gap-3">
+                  <TouchableOpacity
+                    className="flex-1 bg-claw-orange active:bg-claw-orange-dark rounded-lg py-3 flex-row items-center justify-center gap-2"
+                    onPress={handleUpgrade}
+                    disabled={upgrading}
+                  >
+                    {upgrading ? (
+                      <ActivityIndicator color="#ffffff" />
+                    ) : (
+                      <>
+                        <MaterialIcons name="sync" size={18} color="#ffffff" />
+                        <Text className="text-white font-bold">Update</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    className="flex-1 bg-surface-raised border border-claw-red/30 active:bg-surface-overlay rounded-lg py-3 flex-row items-center justify-center gap-2"
+                    onPress={handleRebuild}
+                    disabled={rebuilding}
+                  >
+                    {rebuilding ? (
+                      <ActivityIndicator color="#ff003c" />
+                    ) : (
+                      <>
+                        <MaterialIcons name="build" size={18} color="#ff003c" />
+                        <Text className="text-claw-red font-bold">Rebuild</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                </View>
               </View>
             )}
 
@@ -700,22 +716,38 @@ export default function AgentDetailScreen() {
                   </Text>
                 </View>
                 <Text className="text-xs text-text-tertiary mb-3">
-                  A newer version of the agent runtime is available with new features and improvements. Upgrade to get the latest capabilities.
+                  A newer version of the agent runtime is available. Update pushes new code to the existing VM. Rebuild creates a fresh VM from scratch.
                 </Text>
-                <TouchableOpacity
-                  className="bg-claw-orange active:bg-claw-orange-dark rounded-lg py-3 flex-row items-center justify-center gap-2"
-                  onPress={handleUpgrade}
-                  disabled={upgrading}
-                >
-                  {upgrading ? (
-                    <ActivityIndicator color="#ffffff" />
-                  ) : (
-                    <>
-                      <MaterialIcons name="system-update" size={18} color="#ffffff" />
-                      <Text className="text-white font-bold">Upgrade Agent</Text>
-                    </>
-                  )}
-                </TouchableOpacity>
+                <View className="flex-row gap-3">
+                  <TouchableOpacity
+                    className="flex-1 bg-claw-orange active:bg-claw-orange-dark rounded-lg py-3 flex-row items-center justify-center gap-2"
+                    onPress={handleUpgrade}
+                    disabled={upgrading}
+                  >
+                    {upgrading ? (
+                      <ActivityIndicator color="#ffffff" />
+                    ) : (
+                      <>
+                        <MaterialIcons name="sync" size={18} color="#ffffff" />
+                        <Text className="text-white font-bold">Update</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    className="flex-1 bg-surface-raised border border-claw-orange/30 active:bg-surface-overlay rounded-lg py-3 flex-row items-center justify-center gap-2"
+                    onPress={handleRebuild}
+                    disabled={rebuilding}
+                  >
+                    {rebuilding ? (
+                      <ActivityIndicator color="#ff5e00" />
+                    ) : (
+                      <>
+                        <MaterialIcons name="build" size={18} color="#ff5e00" />
+                        <Text className="text-claw-orange font-bold">Rebuild</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                </View>
               </View>
             )}
 

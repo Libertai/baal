@@ -148,6 +148,7 @@ interface FilePanelProps {
   visible: boolean;
   onClose: () => void;
   onUpgrade?: () => void;
+  onRebuild?: () => void;
   isUpgrading?: boolean;
 }
 
@@ -156,6 +157,7 @@ export default function FilePanel({
   visible,
   onClose,
   onUpgrade,
+  onRebuild,
   isUpgrading = false,
 }: FilePanelProps) {
   const { tree, isLoading, isError, refetch, upload } = useWorkspace(agentId);
@@ -250,24 +252,39 @@ export default function FilePanel({
               Agent upgrade required
             </Text>
             <Text className="text-xs text-text-tertiary text-center mb-4">
-              This agent is running an older version that doesn't support file browsing. Upgrade to get the latest features.
+              This agent needs an update to support file browsing.
             </Text>
-            {onUpgrade && (
-              <TouchableOpacity
-                className="bg-claw-orange rounded-lg px-6 py-2.5 flex-row items-center gap-2"
-                onPress={onUpgrade}
-                disabled={isUpgrading}
-                activeOpacity={0.8}
-              >
-                {isUpgrading ? (
-                  <Text className="text-white font-bold text-sm">Upgrading...</Text>
-                ) : (
-                  <>
-                    <MaterialIcons name="system-update" size={16} color="#ffffff" />
-                    <Text className="text-white font-bold text-sm">Upgrade Agent</Text>
-                  </>
+            {(onUpgrade || onRebuild) && (
+              <View style={{ gap: 8, width: "100%" }}>
+                {onUpgrade && (
+                  <TouchableOpacity
+                    className="bg-claw-orange rounded-lg px-6 py-2.5 flex-row items-center justify-center gap-2"
+                    onPress={onUpgrade}
+                    disabled={isUpgrading}
+                    activeOpacity={0.8}
+                  >
+                    {isUpgrading ? (
+                      <Text className="text-white font-bold text-sm">Updating...</Text>
+                    ) : (
+                      <>
+                        <MaterialIcons name="sync" size={16} color="#ffffff" />
+                        <Text className="text-white font-bold text-sm">Update</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
                 )}
-              </TouchableOpacity>
+                {onRebuild && (
+                  <TouchableOpacity
+                    className="rounded-lg px-6 py-2.5 flex-row items-center justify-center gap-2"
+                    style={{ borderWidth: 1, borderColor: "rgba(255, 94, 0, 0.3)" }}
+                    onPress={onRebuild}
+                    activeOpacity={0.8}
+                  >
+                    <MaterialIcons name="build" size={16} color="#ff5e00" />
+                    <Text className="text-claw-orange font-bold text-sm">Rebuild</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
             )}
           </View>
         ) : tree.length === 0 ? (

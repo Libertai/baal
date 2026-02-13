@@ -159,10 +159,21 @@ async def update_user_agent(
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
 
+    # Validate skills if provided
+    if body.skills is not None:
+        from baal_core.templates.loader import validate_skills
+        invalid = validate_skills(body.skills)
+        if invalid:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Unknown skills: {', '.join(invalid)}",
+            )
+
     try:
         agent = await update_agent(
             db, agent, name=body.name,
             system_prompt=body.system_prompt, model=body.model,
+            skills=body.skills,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -260,23 +271,20 @@ async def get_deployment_status(
     )
 
 
-@router.post("/{agent_id}/repair", response_model=AgentResponse)
-async def repair_agent(
+@router.post("/{agent_id}/rebuild", response_model=AgentResponse)
+async def rebuild_agent(
     agent_id: uuid.UUID,
     background_tasks: BackgroundTasks,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Retry a failed deployment."""
+    """Destroy existing VM and deploy a fresh one from scratch."""
     agent = await get_agent(db, agent_id, user.id)
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
 
     if agent.deployment_status not in ("failed", "pending", "running", "deploying"):
-        raise HTTPException(status_code=400, detail="Agent is not in a repairable state")
-
-    agent.deployment_status = "pending"
-    await db.commit()
+        raise HTTPException(status_code=400, detail="Agent cannot be rebuilt in its current state")
 
     settings = get_settings()
     from baal_core.deployer import AlephDeployer
@@ -286,6 +294,20 @@ async def repair_agent(
         ssh_pubkey=settings.aleph_ssh_pubkey,
         ssh_privkey_path=settings.aleph_ssh_privkey_path,
     )
+
+    # Destroy old VM first to avoid orphaned instances
+    if agent.instance_hash:
+        try:
+            await deployer.destroy_instance(agent.instance_hash)
+        except Exception:
+            pass  # Best-effort cleanup; new deploy will proceed regardless
+        agent.instance_hash = None
+        agent.crn_url = None
+        agent.vm_url = None
+
+    agent.deployment_status = "pending"
+    await db.commit()
+
     background_tasks.add_task(
         deploy_agent_background,
         agent_id=agent.id,
@@ -310,8 +332,8 @@ async def redeploy_agent(
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
 
-    if agent.deployment_status != "running":
-        raise HTTPException(status_code=400, detail="Agent is not running")
+    if agent.deployment_status not in ("running", "failed"):
+        raise HTTPException(status_code=400, detail="Agent is not in a redeployable state")
 
     agent.deployment_status = "deploying"
     await db.commit()
