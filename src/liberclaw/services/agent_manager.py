@@ -239,16 +239,16 @@ async def deploy_agent_background(
                      "Verifying agent is responding...")
             add_log(agent_id, "info", f"Checking health at {vm_url}/health...")
 
-            # Give the agent a moment to start up
+            # Give the agent time to start + Caddy time to obtain TLS cert
             healthy = False
-            for attempt in range(6):  # 6 attempts × 5s = 30s max
-                await asyncio.sleep(5)
+            for attempt in range(12):  # 12 attempts × 10s = 120s max
+                await asyncio.sleep(10)
                 healthy = await health_check(vm_url)
                 if healthy:
                     break
-                if attempt < 5:
+                if attempt < 11:
                     add_log(agent_id, "info",
-                            f"Waiting for agent startup ({(attempt + 1) * 5}s)...")
+                            f"Waiting for agent startup ({(attempt + 1) * 10}s)...")
 
             duration = int(time.monotonic() - deploy_start)
 
@@ -273,7 +273,7 @@ async def deploy_agent_background(
                 db.add(DeploymentHistory(
                     agent_id=agent_id, status="failed",
                     step="health_check",
-                    error_message="Agent not responding after 30s",
+                    error_message="Agent not responding after 120s",
                     duration_seconds=duration,
                 ))
 
