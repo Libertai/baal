@@ -5,9 +5,9 @@ import Svg, { Circle } from "react-native-svg";
 import { useState, useRef, useEffect } from "react";
 import { useAgent, useDeleteAgent } from "@/lib/hooks/useAgents";
 import { useDeploymentStatus } from "@/lib/hooks/useDeployment";
-import { repairAgent, redeployAgent, getAgentHealth } from "@/lib/api/agents";
+import { rebuildAgent, redeployAgent, getAgentHealth } from "@/lib/api/agents";
 import AgentStatusBadge from "@/components/agent/AgentStatusBadge";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { DeploymentStep, DeploymentLogEntry } from "@/lib/api/types";
 
 const isWeb = Platform.OS === "web";
@@ -23,6 +23,12 @@ const DEPLOY_STEPS = [
   { key: "ssh", label: "Secure Connection", detail: "Establishing SSH connection to VM." },
   { key: "environment", label: "Environment Setup", detail: "Installing runtime and deploying code." },
   { key: "service", label: "Service Activation", detail: "Starting agent and configuring HTTPS." },
+  { key: "health", label: "Health Check", detail: "Verifying agent is responding." },
+];
+
+const UPGRADE_STEPS = [
+  { key: "allocation", label: "Locating VM", detail: "Finding existing VM on the network." },
+  { key: "environment", label: "Pushing Update", detail: "Deploying latest code and configuration." },
   { key: "health", label: "Health Check", detail: "Verifying agent is responding." },
 ];
 
@@ -119,40 +125,44 @@ function TerminalLog({ logs }: { logs: DeploymentLogEntry[] }) {
   );
 }
 
-function DeploymentView({ agentId, agentName, onAbort, onRepair }: { agentId: string; agentName: string; onAbort: () => void; onRepair: () => void }) {
+function DeploymentView({ agentId, agentName, isUpgrade, onAbort, onRebuild }: { agentId: string; agentName: string; isUpgrade: boolean; onAbort: () => void; onRebuild: () => void }) {
   const { data } = useDeploymentStatus(agentId);
   const apiSteps: DeploymentStep[] = data?.steps ?? [];
   const apiLogs: DeploymentLogEntry[] = data?.logs ?? [];
+  const steps = isUpgrade ? UPGRADE_STEPS : DEPLOY_STEPS;
 
   // Find current step index from API data
   let currentStep = 0;
   let activeLabel = "Initializing...";
   if (apiSteps.length > 0) {
-    const activeIdx = apiSteps.findIndex((s) => s.status === "active");
-    const doneCount = apiSteps.filter((s) => s.status === "done").length;
-    const failedIdx = apiSteps.findIndex((s) => s.status === "failed");
+    // Map API steps to our display steps by key
+    const activeStep = apiSteps.find((s) => s.status === "active");
+    const failedStep = apiSteps.find((s) => s.status === "failed");
+    const doneKeys = new Set(apiSteps.filter((s) => s.status === "done").map((s) => s.key));
 
-    if (failedIdx >= 0) {
-      currentStep = failedIdx;
+    if (failedStep) {
+      const idx = steps.findIndex((s) => s.key === failedStep.key);
+      currentStep = idx >= 0 ? idx : 0;
       activeLabel = "Failed";
-    } else if (activeIdx >= 0) {
-      currentStep = activeIdx;
-      const stepDef = DEPLOY_STEPS[activeIdx];
-      activeLabel = stepDef?.label ?? "Deploying...";
+    } else if (activeStep) {
+      const idx = steps.findIndex((s) => s.key === activeStep.key);
+      currentStep = idx >= 0 ? idx : 0;
+      activeLabel = steps[currentStep]?.label ?? "Deploying...";
     } else {
+      const doneCount = steps.filter((s) => doneKeys.has(s.key)).length;
       currentStep = doneCount;
-      activeLabel = doneCount >= DEPLOY_STEPS.length ? "Complete" : "Deploying...";
+      activeLabel = doneCount >= steps.length ? "Complete" : "Deploying...";
     }
   }
 
   const progress = apiSteps.length > 0
-    ? Math.min(((currentStep + 0.5) / DEPLOY_STEPS.length) * 100, 100)
+    ? Math.min(((currentStep + 0.5) / steps.length) * 100, 100)
     : 0;
 
   // Get step status and detail from API data, falling back to static defaults
   const getStepState = (stepKey: string, idx: number) => {
     const apiStep = apiSteps.find((s) => s.key === stepKey);
-    const stepDef = DEPLOY_STEPS[idx];
+    const stepDef = steps[idx];
     if (!apiStep) {
       return { status: "pending" as const, detail: stepDef.detail };
     }
@@ -193,11 +203,11 @@ function DeploymentView({ agentId, agentName, onAbort, onRepair }: { agentId: st
           className="text-2xl font-black text-text-primary uppercase tracking-tight text-center"
           style={isWeb ? { textShadow: "0 0 20px rgba(255,94,0,0.5)" } as any : undefined}
         >
-          Deploying{" "}
+          {isUpgrade ? "Updating" : "Deploying"}{" "}
           <Text className="text-claw-orange">{agentName}</Text>
         </Text>
         <Text className="font-mono text-xs text-claw-orange/70 uppercase tracking-widest mt-1">
-          Provisioning on Aleph Cloud Secure Enclave
+          {isUpgrade ? "Pushing latest code to existing VM" : "Provisioning on Aleph Cloud Secure Enclave"}
         </Text>
       </View>
 
@@ -241,14 +251,14 @@ function DeploymentView({ agentId, agentName, onAbort, onRepair }: { agentId: st
               style={{
                 left: 15,
                 top: 16,
-                height: `${Math.max(0, (currentStep / (DEPLOY_STEPS.length - 1)) * 100)}%` as any,
+                height: `${Math.max(0, (currentStep / (steps.length - 1)) * 100)}%` as any,
                 ...(isWeb
                   ? { background: "linear-gradient(to bottom, #ff5e00, #ff003c)" }
                   : { backgroundColor: "#ff5e00" }),
               }}
             />
 
-            {DEPLOY_STEPS.map((step, i) => {
+            {steps.map((step, i) => {
               const state = getStepState(step.key, i);
               const isDone = state.status === "done";
               const isCurrent = state.status === "active";
@@ -356,9 +366,9 @@ function DeploymentView({ agentId, agentName, onAbort, onRepair }: { agentId: st
             SESSION ID: <Text className="text-text-secondary">0x{agentId.slice(0, 6)}...{agentId.slice(-4)}</Text>
           </Text>
           <View className="flex-row items-center gap-4">
-            <Pressable className="flex-row items-center gap-2" onPress={onRepair}>
+            <Pressable className="flex-row items-center gap-2" onPress={onRebuild}>
               <MaterialIcons name="refresh" size={16} color="rgba(255,94,0,0.7)" />
-              <Text className="text-sm font-mono text-claw-orange/70 uppercase">Repair</Text>
+              <Text className="text-sm font-mono text-claw-orange/70 uppercase">Rebuild</Text>
             </Pressable>
             <Pressable className="flex-row items-center gap-2" onPress={onAbort}>
               <MaterialIcons name="cancel" size={16} color="rgba(255,0,60,0.7)" />
@@ -379,8 +389,9 @@ export default function AgentDetailScreen() {
   const isDeployingRef = useRef(false);
   const { data: agent, isLoading, refetch } = useAgent(id!);
   const deleteAgent = useDeleteAgent();
+  const queryClient = useQueryClient();
   const [aborting, setAborting] = useState(false);
-  const [repairing, setRepairing] = useState(false);
+  const [rebuilding, setRebuilding] = useState(false);
 
   const isDeploying =
     agent?.deployment_status === "pending" ||
@@ -430,23 +441,40 @@ export default function AgentDetailScreen() {
     }
   };
 
-  const handleRepair = async () => {
-    setRepairing(true);
+  const doRebuild = async () => {
+    setRebuilding(true);
     try {
-      await repairAgent(id!);
-      await refetch();
+      const updated = await rebuildAgent(id!);
+      queryClient.setQueryData(["agent", id], updated);
     } catch {
       await refetch();
     } finally {
-      setRepairing(false);
+      setRebuilding(false);
+    }
+  };
+
+  const handleRebuild = () => {
+    if (isWeb) {
+      if (window.confirm("This will destroy the current VM and create a new one from scratch. The agent will be unavailable during redeployment (~2-3 min).\n\nContinue?")) {
+        doRebuild();
+      }
+    } else {
+      Alert.alert(
+        "Rebuild Agent",
+        "This will destroy the current VM and create a new one from scratch. The agent will be unavailable during redeployment (~2-3 min).\n\nContinue?",
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Rebuild", style: "destructive", onPress: doRebuild },
+        ]
+      );
     }
   };
 
   const handleUpgrade = async () => {
     setUpgrading(true);
     try {
-      await redeployAgent(id!);
-      await refetch();
+      const updated = await redeployAgent(id!);
+      queryClient.setQueryData(["agent", id], updated);
     } catch {
       await refetch();
     } finally {
@@ -454,26 +482,36 @@ export default function AgentDetailScreen() {
     }
   };
 
-  const handleDelete = () => {
-    Alert.alert(
-      "Delete Agent",
-      `Are you sure you want to delete "${agent?.name}"? This cannot be undone.`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              await deleteAgent.mutateAsync(id!);
-              router.back();
-            } catch {
-              Alert.alert("Error", "Failed to delete agent");
-            }
+  const handleDelete = async () => {
+    if (isWeb) {
+      if (!window.confirm(`Are you sure you want to delete "${agent?.name}"? This cannot be undone.`)) return;
+      try {
+        await deleteAgent.mutateAsync(id!);
+        router.back();
+      } catch {
+        window.alert("Failed to delete agent");
+      }
+    } else {
+      Alert.alert(
+        "Delete Agent",
+        `Are you sure you want to delete "${agent?.name}"? This cannot be undone.`,
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Delete",
+            style: "destructive",
+            onPress: async () => {
+              try {
+                await deleteAgent.mutateAsync(id!);
+                router.back();
+              } catch {
+                Alert.alert("Error", "Failed to delete agent");
+              }
+            },
           },
-        },
-      ]
-    );
+        ]
+      );
+    }
   };
 
   if (isLoading || !agent) {
@@ -518,7 +556,7 @@ export default function AgentDetailScreen() {
       >
         {/* Deployment Progress (full-page takeover when deploying) */}
         {isDeploying ? (
-          <DeploymentView agentId={id!} agentName={agent.name} onAbort={handleAbort} onRepair={handleRepair} />
+          <DeploymentView agentId={id!} agentName={agent.name} isUpgrade={!!agent.vm_url} onAbort={handleAbort} onRebuild={handleRebuild} />
         ) : (
           <View className="px-4 pt-4">
             {/* Status + Agent Icon */}
@@ -575,19 +613,19 @@ export default function AgentDetailScreen() {
                   </Text>
                 </View>
                 <Text className="text-xs text-text-tertiary mb-3">
-                  The agent could not start. Try repairing to redeploy.
+                  The agent could not start. Rebuild will destroy the current VM and create a fresh one.
                 </Text>
                 <TouchableOpacity
                   className="bg-claw-orange active:bg-claw-orange-dark rounded-lg py-3 flex-row items-center justify-center gap-2"
-                  onPress={handleRepair}
-                  disabled={repairing}
+                  onPress={handleRebuild}
+                  disabled={rebuilding}
                 >
-                  {repairing ? (
+                  {rebuilding ? (
                     <ActivityIndicator color="#ffffff" />
                   ) : (
                     <>
-                      <MaterialIcons name="refresh" size={18} color="#ffffff" />
-                      <Text className="text-white font-bold">Repair</Text>
+                      <MaterialIcons name="build" size={18} color="#ffffff" />
+                      <Text className="text-white font-bold">Rebuild</Text>
                     </>
                   )}
                 </TouchableOpacity>
@@ -603,22 +641,38 @@ export default function AgentDetailScreen() {
                   </Text>
                 </View>
                 <Text className="text-xs text-text-tertiary mb-3">
-                  The VM is deployed but the agent service is down. Try repairing.
+                  The VM is deployed but the agent service is down. Try updating first, or rebuild to start fresh.
                 </Text>
-                <TouchableOpacity
-                  className="bg-claw-orange active:bg-claw-orange-dark rounded-lg py-3 flex-row items-center justify-center gap-2"
-                  onPress={handleRepair}
-                  disabled={repairing}
-                >
-                  {repairing ? (
-                    <ActivityIndicator color="#ffffff" />
-                  ) : (
-                    <>
-                      <MaterialIcons name="refresh" size={18} color="#ffffff" />
-                      <Text className="text-white font-bold">Repair</Text>
-                    </>
-                  )}
-                </TouchableOpacity>
+                <View className="flex-row gap-3">
+                  <TouchableOpacity
+                    className="flex-1 bg-claw-orange active:bg-claw-orange-dark rounded-lg py-3 flex-row items-center justify-center gap-2"
+                    onPress={handleUpgrade}
+                    disabled={upgrading}
+                  >
+                    {upgrading ? (
+                      <ActivityIndicator color="#ffffff" />
+                    ) : (
+                      <>
+                        <MaterialIcons name="sync" size={18} color="#ffffff" />
+                        <Text className="text-white font-bold">Update</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    className="flex-1 bg-surface-raised border border-claw-orange/30 active:bg-surface-overlay rounded-lg py-3 flex-row items-center justify-center gap-2"
+                    onPress={handleRebuild}
+                    disabled={rebuilding}
+                  >
+                    {rebuilding ? (
+                      <ActivityIndicator color="#ff5e00" />
+                    ) : (
+                      <>
+                        <MaterialIcons name="build" size={18} color="#ff5e00" />
+                        <Text className="text-claw-orange font-bold">Rebuild</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                </View>
               </View>
             )}
 
