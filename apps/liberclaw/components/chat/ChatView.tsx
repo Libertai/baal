@@ -149,10 +149,10 @@ export default function ChatView({
             </Text>
           </View>
         }
+        ListFooterComponent={
+          isStreaming ? <TypingIndicator agentName={agentName} /> : null
+        }
       />
-
-      {/* Typing indicator */}
-      {isStreaming && <TypingIndicator />}
 
       {/* Input */}
       <ChatInput

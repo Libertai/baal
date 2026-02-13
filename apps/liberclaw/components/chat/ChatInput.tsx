@@ -272,12 +272,15 @@ export default function ChatInput({
               value={input}
               onChangeText={setInput}
               onSubmitEditing={handleSend}
-              style={{
-                backgroundColor: "transparent",
-                maxHeight: 120,
-                paddingRight: 52,
-                fontFamily: "Inter",
-              }}
+              style={[
+                {
+                  backgroundColor: "transparent",
+                  maxHeight: 120,
+                  paddingRight: 52,
+                  fontFamily: "Inter",
+                },
+                Platform.OS === "web" && ({ outlineStyle: "none" } as any),
+              ]}
             />
             <View
               style={{
