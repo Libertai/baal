@@ -218,6 +218,48 @@ Optional: `BRAVE_API_KEY` enables the `web_search` tool. Project SSH keypair at 
 | `web_search` | Brave Search API (only if `BRAVE_API_KEY` set) |
 | `spawn` | Background subagent (restricted tools, max 15 iterations) |
 
+## Deployment
+
+### Telegram Bot (Baal)
+Runs on a separate Aleph Cloud instance. See memory notes for details.
+
+### LiberClaw (web + API)
+Single Aleph Cloud VM serving three domains via Caddy with auto Let's Encrypt:
+
+| Domain | Service | Source |
+|--------|---------|--------|
+| `liberclaw.ai` | Static landing site | `sites/landing/dist/` |
+| `api.liberclaw.ai` | FastAPI reverse proxy | uvicorn on localhost:8000 |
+| `app.liberclaw.ai` | Expo web SPA | `apps/liberclaw/dist/` |
+
+**Server:** `/root/liberclaw/` — git clone of the repo (`liberclaw` branch)
+**Config:** `/root/liberclaw/.env` (from `deploy/.env.production` template)
+**Services:** `caddy`, `liberclaw-api` (systemd), `postgresql` (16)
+
+**Deploy files** (`deploy/`):
+- `setup.sh` — Full bootstrap for a fresh VM (`ssh -A root@<IP> 'bash -s' < deploy/setup.sh`)
+- `Caddyfile` — Copied to `/etc/caddy/Caddyfile` (not symlinked; Caddy runs as `caddy` user)
+- `liberclaw-api.service` — systemd unit for uvicorn
+- `.env.production` — Template with all env vars
+
+**Update workflow:**
+```bash
+ssh -A root@<VM_IP>
+cd /root/liberclaw && git pull
+# If frontend changed:
+cd sites/landing && npm run build
+cd /root/liberclaw/apps/liberclaw && npx expo export --platform web
+# If Caddyfile changed:
+cp deploy/Caddyfile /etc/caddy/Caddyfile && systemctl reload caddy
+# If backend changed:
+systemctl restart liberclaw-api
+```
+
+**Notes:**
+- Caddy needs `chmod 711 /root` + `o+rX` on dist dirs to serve static files
+- PostgreSQL password must be URL-safe (use `openssl rand -hex 24`, not `-base64`)
+- `alembic.ini` has the dev DB URL (port 5433); production overrides it in `setup.sh`
+
 ## Available Models
 
 Currently offering: `qwen3-coder-next`, `glm-4.7`. Default: `qwen3-coder-next`. Do NOT offer gemma.
