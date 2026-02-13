@@ -31,6 +31,8 @@ class LiberClawSettings(BaseSettings):
     # OAuth — Google
     google_client_id: str = ""
     google_client_secret: str = ""
+    google_android_client_id: str = ""
+    google_ios_client_id: str = ""
 
     # OAuth — GitHub
     github_client_id: str = ""

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 
 
 class MagicLinkRequest(BaseModel):
@@ -18,7 +18,7 @@ class MagicLinkResponse(BaseModel):
 class MagicLinkVerifyRequest(BaseModel):
     token: str | None = None
     email: EmailStr | None = None
-    code: str | None = None
+    code: str | None = Field(None, pattern=r"^\d{6}$")
 
 
 class TokenPair(BaseModel):

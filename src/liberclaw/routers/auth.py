@@ -453,7 +453,14 @@ async def mobile_google_login(
     if not settings.google_client_id:
         raise HTTPException(status_code=501, detail="Google auth not configured")
 
-    claims = await verify_google_id_token(body.id_token, settings.google_client_id)
+    valid_audiences = [
+        cid for cid in [
+            settings.google_client_id,
+            settings.google_android_client_id,
+            settings.google_ios_client_id,
+        ] if cid
+    ]
+    claims = await verify_google_id_token(body.id_token, valid_audiences)
     if not claims:
         raise HTTPException(status_code=401, detail="Invalid Google ID token")
 
@@ -467,6 +474,16 @@ async def mobile_google_login(
         existing = result.scalar_one_or_none()
         if existing and existing.id != current_user.id:
             raise HTTPException(status_code=409, detail="Email already linked to another account")
+
+        # Check if this Google account is already linked to someone
+        result = await db.execute(
+            select(OAuthConnection).where(
+                OAuthConnection.provider == "google",
+                OAuthConnection.provider_id == claims["sub"],
+            )
+        )
+        if result.scalar_one_or_none():
+            raise HTTPException(status_code=409, detail="Google account already linked to another user")
 
         conn = OAuthConnection(
             user_id=current_user.id,
@@ -530,6 +547,16 @@ async def mobile_apple_login(
             existing = result.scalar_one_or_none()
             if existing and existing.id != current_user.id:
                 raise HTTPException(status_code=409, detail="Email already linked to another account")
+
+        # Check if this Apple account is already linked to someone
+        result = await db.execute(
+            select(OAuthConnection).where(
+                OAuthConnection.provider == "apple",
+                OAuthConnection.provider_id == apple_sub,
+            )
+        )
+        if result.scalar_one_or_none():
+            raise HTTPException(status_code=409, detail="Apple account already linked to another user")
 
         conn = OAuthConnection(
             user_id=current_user.id,

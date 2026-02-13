@@ -32,15 +32,18 @@ async def _fetch_jwks(url: str) -> dict:
     return keys
 
 
-async def verify_google_id_token(id_token: str, client_id: str) -> dict | None:
-    """Verify a Google ID token. Returns claims dict or None."""
+async def verify_google_id_token(id_token: str, client_ids: str | list[str]) -> dict | None:
+    """Verify a Google ID token. Returns claims dict or None.
+
+    client_ids can be a single ID or a list (web, Android, iOS).
+    """
     try:
         jwks = await _fetch_jwks(GOOGLE_JWKS_URL)
         payload = jwt.decode(
             id_token,
             jwks,
             algorithms=["RS256"],
-            audience=client_id,
+            audience=client_ids,
             issuer=["https://accounts.google.com", "accounts.google.com"],
         )
         return payload

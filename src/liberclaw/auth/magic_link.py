@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import random
 import secrets
 import string
 from datetime import datetime, timedelta, timezone
@@ -41,8 +40,8 @@ def hash_token(token: str) -> str:
 
 
 def generate_code() -> str:
-    """Generate a random 6-digit numeric code."""
-    return "".join(random.choices(string.digits, k=6))
+    """Generate a cryptographically random 6-digit numeric code."""
+    return "".join(secrets.choice(string.digits) for _ in range(6))
 
 
 async def create_magic_link(
@@ -113,8 +112,10 @@ async def verify_code(
         return None
 
     link.attempts += 1
+    await db.flush()
 
     if link.code_hash != hash_token(code):
+        await db.commit()
         return None
 
     link.used_at = datetime.now(timezone.utc)
