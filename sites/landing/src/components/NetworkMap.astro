@@ -50,7 +50,7 @@ const features = "features" in landFeature ? landFeature.features : [landFeature
 const mapPaths = features.map((f: any) => geometryToPath(f.geometry));
 
 // API URL — configurable, falls back to direct CRN list
-const API_URL = import.meta.env.PUBLIC_API_URL || "http://localhost:8000";
+const API_URL = import.meta.env.PUBLIC_API_URL || "https://api.liberclaw.ai";
 ---
 
 <div class="glass-widget p-1 overflow-hidden relative flex flex-col" id="network-map">
