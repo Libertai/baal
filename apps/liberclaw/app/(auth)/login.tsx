@@ -70,7 +70,11 @@ export default function LoginScreen(): React.JSX.Element {
     try {
       const url =
         provider === "google" ? getGoogleOAuthUrl() : getGitHubOAuthUrl();
-      await WebBrowser.openBrowserAsync(url);
+      if (isWeb) {
+        window.location.href = url;
+      } else {
+        await WebBrowser.openBrowserAsync(url);
+      }
     } catch {
       setError(`Failed to open ${provider} sign-in`);
     }
