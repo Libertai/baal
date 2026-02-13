@@ -123,7 +123,7 @@ npm run build
 echo "--- Building Expo web app ---"
 cd "$REPO_DIR/apps/liberclaw"
 npm ci
-npx expo export --platform web
+EXPO_PUBLIC_API_URL=https://api.liberclaw.ai/api/v1 npx expo export --platform web
 
 # ── 8. Install Caddy config ─────────────────────────────────────────
 

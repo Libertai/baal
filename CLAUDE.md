@@ -248,7 +248,7 @@ ssh -A root@<VM_IP>
 cd /root/liberclaw && git pull
 # If frontend changed:
 cd sites/landing && npm run build
-cd /root/liberclaw/apps/liberclaw && npx expo export --platform web
+cd /root/liberclaw/apps/liberclaw && EXPO_PUBLIC_API_URL=https://api.liberclaw.ai/api/v1 npx expo export --platform web
 # If Caddyfile changed:
 cp deploy/Caddyfile /etc/caddy/Caddyfile && systemctl reload caddy
 # If backend changed:
