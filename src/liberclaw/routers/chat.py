@@ -14,6 +14,7 @@ from liberclaw.auth.dependencies import get_current_user, get_settings
 from liberclaw.database.models import User
 from liberclaw.database.session import get_db
 from liberclaw.schemas.chat import ChatMessageRequest
+from liberclaw.services.activity import emit_activity
 from liberclaw.services.agent_manager import get_agent
 from liberclaw.services.chat_proxy import proxy_chat_stream
 from liberclaw.services.usage_tracker import check_and_increment
@@ -45,6 +46,14 @@ async def send_message(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Daily message limit reached",
         )
+
+    await emit_activity(
+        db, "chat_message",
+        user_id=user.id,
+        agent_id=agent.id,
+        metadata={"agent_name": agent.name},
+        is_public=True,
+    )
 
     # Decrypt agent auth token
     auth_token = decrypt(agent.auth_token, settings.encryption_key)

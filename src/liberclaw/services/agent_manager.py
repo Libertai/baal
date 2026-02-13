@@ -16,6 +16,7 @@ from baal_core.deployer import AlephDeployer
 from baal_core.encryption import encrypt
 from baal_core.models import AVAILABLE_MODELS
 from liberclaw.database.models import Agent, DeploymentHistory
+from liberclaw.services.activity import emit_activity
 
 logger = logging.getLogger(__name__)
 
@@ -273,6 +274,13 @@ async def deploy_agent_background(
                     agent_id=agent_id, status="success",
                     step="complete", duration_seconds=duration,
                 ))
+                await emit_activity(
+                    db, "agent_deployed",
+                    user_id=agent.owner_id,
+                    agent_id=agent.id,
+                    metadata={"agent_name": agent.name, "crn_url": agent.crn_url, "model": agent.model},
+                    is_public=True,
+                )
             else:
                 set_step(agent_id, "health", "failed",
                          "Agent is not responding after deployment")
@@ -444,6 +452,13 @@ async def redeploy_agent_background(
                     agent_id=agent_id, status="success",
                     step="redeploy_complete", duration_seconds=duration,
                 ))
+                await emit_activity(
+                    db, "agent_redeployed",
+                    user_id=agent.owner_id,
+                    agent_id=agent.id,
+                    metadata={"agent_name": agent.name},
+                    is_public=True,
+                )
             else:
                 set_step(agent_id, "health", "failed",
                          "Agent not responding after redeploy")

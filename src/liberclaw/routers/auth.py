@@ -55,7 +55,8 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 async def _create_session_and_tokens(
-    db: AsyncSession, user: User, device_info: str | None = None
+    db: AsyncSession, user: User, device_info: str | None = None,
+    login_method: str | None = None,
 ) -> TokenPair:
     """Create a new session and return access + refresh token pair."""
     settings = get_settings()
@@ -79,6 +80,14 @@ async def _create_session_and_tokens(
     )
     db.add(session)
     await db.flush()
+
+    if login_method:
+        from liberclaw.services.activity import emit_activity
+        await emit_activity(
+            db, "user_login",
+            user_id=user.id,
+            metadata={"method": login_method},
+        )
 
     return TokenPair(
         access_token=access_token,
@@ -215,7 +224,7 @@ async def verify_magic_link(
         user = await _get_or_create_user_by_email(db, email)
 
     device_info = request.headers.get("user-agent", "")[:500]
-    return await _create_session_and_tokens(db, user, device_info)
+    return await _create_session_and_tokens(db, user, device_info, login_method="magic_link")
 
 
 # ── Token Refresh ──────────────────────────────────────────────────────
@@ -301,7 +310,7 @@ async def oauth_google_callback(
     user = await _link_oauth(db, user_info)
 
     device_info = request.headers.get("user-agent", "")[:500]
-    tokens = await _create_session_and_tokens(db, user, device_info)
+    tokens = await _create_session_and_tokens(db, user, device_info, login_method="google")
 
     # Redirect to frontend with tokens
     return RedirectResponse(
@@ -351,7 +360,7 @@ async def oauth_github_callback(
     user = await _link_oauth(db, user_info)
 
     device_info = request.headers.get("user-agent", "")[:500]
-    tokens = await _create_session_and_tokens(db, user, device_info)
+    tokens = await _create_session_and_tokens(db, user, device_info, login_method="github")
 
     return RedirectResponse(
         url=f"{settings.frontend_url}/auth/callback?access_token={tokens.access_token}&refresh_token={tokens.refresh_token}"
@@ -405,7 +414,7 @@ async def wallet_verify(
         await db.flush()
 
     device_info = request.headers.get("user-agent", "")[:500]
-    return await _create_session_and_tokens(db, user, device_info)
+    return await _create_session_and_tokens(db, user, device_info, login_method="wallet")
 
 
 # ── Guest Auth ─────────────────────────────────────────────────────
@@ -428,14 +437,14 @@ async def guest_login(
 
     if user:
         device_info = request.headers.get("user-agent", "")[:500]
-        return await _create_session_and_tokens(db, user, device_info)
+        return await _create_session_and_tokens(db, user, device_info, login_method="guest")
 
     user = User(tier="guest", device_id=body.device_id)
     db.add(user)
     await db.flush()
 
     device_info = request.headers.get("user-agent", "")[:500]
-    return await _create_session_and_tokens(db, user, device_info)
+    return await _create_session_and_tokens(db, user, device_info, login_method="guest")
 
 
 # ── Mobile OAuth — Google ID Token ────────────────────────────────
@@ -503,7 +512,7 @@ async def mobile_google_login(
         await db.flush()
 
         device_info = request.headers.get("user-agent", "")[:500]
-        return await _create_session_and_tokens(db, current_user, device_info)
+        return await _create_session_and_tokens(db, current_user, device_info, login_method="google")
 
     # Normal flow — find or create user via OAuth
     user_info = {
@@ -517,7 +526,7 @@ async def mobile_google_login(
     user = await _link_oauth(db, user_info)
 
     device_info = request.headers.get("user-agent", "")[:500]
-    return await _create_session_and_tokens(db, user, device_info)
+    return await _create_session_and_tokens(db, user, device_info, login_method="google")
 
 
 # ── Mobile OAuth — Apple ID Token ─────────────────────────────────
@@ -574,7 +583,7 @@ async def mobile_apple_login(
         await db.flush()
 
         device_info = request.headers.get("user-agent", "")[:500]
-        return await _create_session_and_tokens(db, current_user, device_info)
+        return await _create_session_and_tokens(db, current_user, device_info, login_method="apple")
 
     # Normal flow — find or create user via OAuth
     user_info = {
@@ -587,7 +596,7 @@ async def mobile_apple_login(
     user = await _link_oauth(db, user_info)
 
     device_info = request.headers.get("user-agent", "")[:500]
-    return await _create_session_and_tokens(db, user, device_info)
+    return await _create_session_and_tokens(db, user, device_info, login_method="apple")
 
 
 # ── Logout ─────────────────────────────────────────────────────────────

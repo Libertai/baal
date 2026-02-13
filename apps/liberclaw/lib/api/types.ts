@@ -202,3 +202,17 @@ export interface UsageDay {
 export interface UsageHistory {
   days: UsageDay[];
 }
+
+// ── Activity ─────────────────────────────────────────────────────────
+
+export interface ActivityEvent {
+  id: string;
+  event_type: string;
+  metadata: Record<string, any>;
+  is_public: boolean;
+  created_at: string;
+}
+
+export interface ActivityListResponse {
+  events: ActivityEvent[];
+}

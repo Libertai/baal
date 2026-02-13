@@ -9,7 +9,9 @@ import Toggle from "@/components/ui/Toggle";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 
 import { useAuth } from "@/lib/auth/provider";
+import { useActivity } from "@/lib/hooks/useActivity";
 import { useUsage } from "@/lib/hooks/useUsage";
+import type { ActivityEvent } from "@/lib/api/types";
 
 const isWeb = Platform.OS === "web";
 
@@ -71,6 +73,62 @@ function SettingsRow({ icon, label, trailing, onPress, isLast = false }: Setting
   );
 }
 
+// ── Activity helpers ─────────────────────────────────────────────────
+
+const EVENT_ICONS: Record<string, IconName> = {
+  agent_deployed: "rocket-launch",
+  agent_rebuilt: "build",
+  agent_redeployed: "publish",
+  agent_deleted: "delete",
+  agent_created: "add-circle",
+  agent_updated: "edit",
+  chat_message: "chat",
+  user_login: "login",
+};
+
+const EVENT_LABELS: Record<string, (meta: Record<string, any>) => string> = {
+  agent_deployed: (m) => `Deployed "${m.agent_name}"`,
+  agent_rebuilt: (m) => `Rebuilt "${m.agent_name}"`,
+  agent_redeployed: (m) => `Redeployed "${m.agent_name}"`,
+  agent_deleted: (m) => `Deleted "${m.agent_name}"`,
+  agent_created: (m) => `Created "${m.agent_name}"`,
+  agent_updated: (m) => `Updated "${m.agent_name}"`,
+  chat_message: (m) => `Chat with "${m.agent_name}"`,
+  user_login: (m) => `Logged in via ${m.method}`,
+};
+
+function formatRelativeTime(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  return `${days}d ago`;
+}
+
+function ActivityRow({ event, isLast }: { event: ActivityEvent; isLast: boolean }): React.ReactElement {
+  const icon = EVENT_ICONS[event.event_type] ?? "info";
+  const labelFn = EVENT_LABELS[event.event_type];
+  const label = labelFn ? labelFn(event.metadata) : event.event_type;
+  const borderClass = isLast ? "" : "border-b border-surface-border";
+
+  return (
+    <View className={`flex-row items-center px-4 py-3 ${borderClass}`}>
+      <View className="w-8 h-8 rounded-lg bg-claw-orange/10 border border-claw-orange/20 items-center justify-center mr-3">
+        <MaterialIcons name={icon} size={16} color="#ff5e00" />
+      </View>
+      <Text className="flex-1 text-text-primary text-sm" numberOfLines={1}>
+        {label}
+      </Text>
+      <Text className="text-text-tertiary text-xs ml-2">
+        {formatRelativeTime(event.created_at)}
+      </Text>
+    </View>
+  );
+}
+
 // ── Slot Indicator ───────────────────────────────────────────────────
 
 function SlotIndicator({ filled, total }: SlotIndicatorProps): React.ReactElement {
@@ -96,6 +154,8 @@ function SlotIndicator({ filled, total }: SlotIndicatorProps): React.ReactElemen
 export default function SettingsScreen(): React.ReactElement {
   const { user, logout } = useAuth();
   const { data: usage } = useUsage();
+  const { data: activityData } = useActivity(10);
+  const activities = activityData?.events ?? [];
   const [showToolCalls, setShowToolCalls] = useState(user?.show_tool_calls ?? true);
 
   const tier = usage?.tier ?? user?.tier ?? "free";
@@ -169,16 +229,26 @@ export default function SettingsScreen(): React.ReactElement {
           <Text className="text-text-primary text-base font-bold font-display">
             Recent Activity
           </Text>
-          <ComingSoonBadge />
         </View>
-        <View className="p-6 items-center">
-          <View className="w-12 h-12 rounded-full bg-surface-overlay border border-surface-border items-center justify-center mb-3">
-            <MaterialIcons name="timeline" size={22} color="#5a5464" />
+
+        {activities.length === 0 ? (
+          <View className="p-6 items-center">
+            <View className="w-12 h-12 rounded-full bg-surface-overlay border border-surface-border items-center justify-center mb-3">
+              <MaterialIcons name="timeline" size={22} color="#5a5464" />
+            </View>
+            <Text className="text-text-secondary text-sm text-center">
+              No activity yet. Deploy an agent to get started!
+            </Text>
           </View>
-          <Text className="text-text-secondary text-sm text-center">
-            Activity logs will appear here once available.
-          </Text>
-        </View>
+        ) : (
+          activities.map((event, i) => (
+            <ActivityRow
+              key={event.id}
+              event={event}
+              isLast={i === activities.length - 1}
+            />
+          ))
+        )}
       </Card>
 
       {/* ── Billing History ──────────────────────────────────────── */}

@@ -116,28 +116,12 @@ const API_URL = import.meta.env.PUBLIC_API_URL || "https://api.liberclaw.ai";
 </div>
 
 <script define:vars={{ VB_W, VB_H, API_URL }}>
-  // ── Types ─────────────────────────────────────────────────────────
-  const AGENT_NAMES = [
-    "CodeBuddy", "Researcher", "SysAdmin", "DataAnalyst", "ContentGen",
-    "APIMonitor", "DocWriter", "TestRunner", "LogParser", "Translator",
-    "Summarizer", "WebScraper", "TaskPlanner", "MailBot", "ChatAssist",
-  ];
-
-  const ACTIONS = [
-    "deployed to", "migrated to", "scaled up on", "restarted on",
-    "health check passed on",
-  ];
-
   // ── State ─────────────────────────────────────────────────────────
   let crnNodes = []; // { name, lat, lng, cx, cy, el }
 
   // ── Helpers ───────────────────────────────────────────────────────
   function pick(arr) {
     return arr[Math.floor(Math.random() * arr.length)];
-  }
-
-  function rand(min, max) {
-    return Math.random() * (max - min) + min;
   }
 
   function project(lng, lat) {
@@ -234,16 +218,59 @@ const API_URL = import.meta.env.PUBLIC_API_URL || "https://api.liberclaw.ai";
     });
   }
 
-  function generateEvent() {
-    if (crnNodes.length === 0) return;
-    const node = pick(crnNodes);
-    const agent = pick(AGENT_NAMES);
-    const action = pick(ACTIONS);
-    const location = node.city ? `${node.name} (${node.city})` : node.name;
-    addFeedEntry(
-      `<strong>${agent}</strong> ${action} <span class="text-claw-orange">${location}</span>`
-    );
-    highlightNode(node);
+  // ── SSE Activity Feed ───────────────────────────────────────────
+  const STREAM_URL = `${API_URL}/api/v1/activity/stream`;
+
+  const EVENT_LABELS = {
+    agent_deployed: (m) => `<strong>${m.agent_name || 'Agent'}</strong> deployed on <span class="text-claw-orange">${formatCrn(m.crn_url)}</span>`,
+    agent_rebuilt: (m) => `<strong>${m.agent_name || 'Agent'}</strong> rebuilt`,
+    agent_redeployed: (m) => `<strong>${m.agent_name || 'Agent'}</strong> redeployed`,
+    agent_deleted: (m) => `<strong>${m.agent_name || 'Agent'}</strong> removed`,
+    chat_message: (m) => `<strong>${m.agent_name || 'Agent'}</strong> received a message`,
+  };
+
+  function formatCrn(url) {
+    if (!url) return "CRN";
+    try {
+      return new URL(url).hostname.split(".")[0];
+    } catch {
+      return "CRN";
+    }
+  }
+
+  function handleActivityEvent(data) {
+    const labelFn = EVENT_LABELS[data.event_type];
+    if (!labelFn) return;
+    const text = labelFn(data.metadata || {});
+    addFeedEntry(text);
+
+    // Highlight a CRN on the map
+    if (crnNodes.length > 0) {
+      if (data.metadata?.crn_url) {
+        const match = crnNodes.find((n) =>
+          data.metadata.crn_url.includes(n.name)
+        );
+        highlightNode(match || pick(crnNodes));
+      } else {
+        highlightNode(pick(crnNodes));
+      }
+    }
+  }
+
+  function connectSSE() {
+    const source = new EventSource(STREAM_URL);
+
+    source.onmessage = (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        handleActivityEvent(data);
+      } catch {}
+    };
+
+    source.onerror = () => {
+      source.close();
+      setTimeout(connectSSE, 5000);
+    };
   }
 
   // ── Fetch data ────────────────────────────────────────────────────
@@ -315,12 +342,28 @@ const API_URL = import.meta.env.PUBLIC_API_URL || "https://api.liberclaw.ai";
     }
 
     // Clear loading message and start feed
-    document.getElementById("feed").innerHTML = "";
-    generateEvent();
+    const feedEl = document.getElementById("feed");
+    feedEl.textContent = "";
 
-    setInterval(() => {
-      generateEvent();
-    }, rand(3000, 6000));
+    // Connect to real-time activity stream
+    connectSSE();
+
+    // Fallback: if no events within 10s, fetch from REST + show waiting message
+    setTimeout(async () => {
+      const feed = document.getElementById("feed");
+      if (feed && feed.children.length === 0) {
+        try {
+          const resp = await fetch(`${API_URL}/api/v1/activity/public?limit=5`);
+          const data = await resp.json();
+          for (const event of data.events.reverse()) {
+            handleActivityEvent(event);
+          }
+        } catch {}
+        if (feed.children.length === 0) {
+          addFeedEntry("Waiting for network activity...");
+        }
+      }
+    }, 10000);
   }
 
   if (document.readyState === "loading") {

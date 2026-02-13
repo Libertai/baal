@@ -23,6 +23,7 @@ from liberclaw.schemas.agents import (
     DeploymentStatusResponse,
     DeploymentStepResponse,
 )
+from liberclaw.services.activity import emit_activity
 from liberclaw.services.agent_manager import (
     create_agent,
     delete_agent,
@@ -112,6 +113,11 @@ async def create_user_agent(
         db, user.id, body.name, system_prompt, model,
         settings.encryption_key, skills=skills,
     )
+    await emit_activity(
+        db, "agent_created",
+        user_id=user.id, agent_id=agent.id,
+        metadata={"agent_name": body.name},
+    )
     await db.commit()
 
     # Launch background deployment
@@ -178,6 +184,14 @@ async def update_user_agent(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+    changes = [k for k in ("name", "system_prompt", "model", "skills") if getattr(body, k) is not None]
+    if changes:
+        await emit_activity(
+            db, "agent_updated",
+            user_id=user.id, agent_id=agent.id,
+            metadata={"agent_name": agent.name, "changes": changes},
+        )
+
     return AgentResponse.model_validate(agent)
 
 
@@ -199,6 +213,13 @@ async def delete_user_agent(
         private_key=settings.aleph_private_key,
         ssh_pubkey=settings.aleph_ssh_pubkey,
         ssh_privkey_path=settings.aleph_ssh_privkey_path,
+    )
+    agent_name = agent.name
+    await emit_activity(
+        db, "agent_deleted",
+        user_id=user.id,
+        metadata={"agent_name": agent_name},
+        is_public=True,
     )
     await delete_agent(db, agent, deployer)
 
@@ -305,6 +326,12 @@ async def rebuild_agent(
         agent.crn_url = None
         agent.vm_url = None
 
+    await emit_activity(
+        db, "agent_rebuilt",
+        user_id=user.id, agent_id=agent.id,
+        metadata={"agent_name": agent.name},
+        is_public=True,
+    )
     agent.deployment_status = "pending"
     await db.commit()
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import date, datetime, timezone
 
+import sqlalchemy as sa
 from sqlalchemy import (
     Boolean,
     Date,
@@ -190,6 +191,30 @@ class UsageEvent(Base):
     event_type: Mapped[str] = mapped_column(String(50))  # "chat_message", "agent_created", etc.
     tokens_used: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class ActivityEvent(Base):
+    __tablename__ = "activity_events"
+    __table_args__ = (
+        Index("ix_activity_user_created", "user_id", "created_at"),
+        Index("ix_activity_public_created", "is_public", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    agent_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("agents.id", ondelete="SET NULL"), nullable=True
+    )
+    event_type: Mapped[str] = mapped_column(String(50))
+    metadata_json: Mapped[dict | None] = mapped_column(sa.JSON, nullable=True)
+    is_public: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, index=True
+    )
 
 
 class WalletChallenge(Base):
