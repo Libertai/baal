@@ -534,7 +534,13 @@ async def get_chat_history(chat_id: str, limit: int = 50):
                         "name": fn.get("name", ""),
                         "input": fn.get("arguments", ""),
                     })
-        # Skip tool-result messages (role == "tool") — they're internal
+        elif role == "tool":
+            # Reconstruct file events from stored tool results
+            content = msg.get("content", "")
+            if isinstance(content, str) and content.startswith("File sent to user: "):
+                rel_path = content.removeprefix("File sent to user: ").strip()
+                if rel_path:
+                    events.append({"type": "file", "path": rel_path})
     return {"messages": events}
 
 

@@ -3,6 +3,7 @@
  * Shows inline preview for images, download button for all files.
  */
 
+import { useState, useEffect } from "react";
 import { View, Text, TouchableOpacity, Image, Linking, Platform } from "react-native";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { getFileDownloadUrl } from "@/lib/api/files";
@@ -37,6 +38,29 @@ export default function FileCard({ agentId, path, caption, size }: FileCardProps
   const filename = path.includes("/") ? path.split("/").pop()! : path;
   const downloadUrl = getFileDownloadUrl(agentId, path);
   const showPreview = isImage(filename);
+  const [previewUri, setPreviewUri] = useState<string | null>(null);
+
+  // Fetch image with auth headers and create a blob URL for preview
+  useEffect(() => {
+    if (!showPreview) return;
+    let revoke: string | null = null;
+    (async () => {
+      try {
+        const tokens = await getTokens();
+        const resp = await fetch(downloadUrl, {
+          headers: { Authorization: `Bearer ${tokens?.access_token}` },
+        });
+        if (!resp.ok) return;
+        const blob = await resp.blob();
+        const url = URL.createObjectURL(blob);
+        revoke = url;
+        setPreviewUri(url);
+      } catch {
+        // Preview unavailable — download still works
+      }
+    })();
+    return () => { if (revoke) URL.revokeObjectURL(revoke); };
+  }, [downloadUrl, showPreview]);
 
   const handleDownload = async () => {
     if (Platform.OS === "web") {
@@ -106,10 +130,10 @@ export default function FileCard({ agentId, path, caption, size }: FileCardProps
       </View>
 
       {/* Image preview */}
-      {showPreview && (
+      {showPreview && previewUri && (
         <View className="p-3" style={{ backgroundColor: "rgba(0, 0, 0, 0.4)" }}>
           <Image
-            source={{ uri: downloadUrl }}
+            source={{ uri: previewUri }}
             style={{
               width: "100%",
               height: 200,
